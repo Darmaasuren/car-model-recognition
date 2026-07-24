@@ -1,0 +1,40 @@
+# Environment
+**/.env
+!**/.env.example
+.venv/
+
+# Python
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend runtime
+backend/runtime/uploads/*
+backend/runtime/crops/*
+backend/runtime/outputs/*
+!backend/runtime/uploads/.gitkeep
+!backend/runtime/crops/.gitkeep
+!backend/runtime/outputs/.gitkeep
+backend/.dockerignore
+
+# Training data and outputs
+train/car_model_recognition-1/
+train/checkpoints/
+train/runs/
+
+postman
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.engine
+
+command.txt
+send.py
+
+

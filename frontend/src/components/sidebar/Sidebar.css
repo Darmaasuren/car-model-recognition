@@ -1,0 +1,148 @@
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 100;
+  display: flex;
+  width: var(--sidebar-width);
+  height: 100vh;
+  flex-direction: column;
+  padding: 18px 12px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 6px 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sidebar__logo {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.sidebar__brand-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.sidebar__brand-text strong {
+  font-size: 13px;
+}
+
+.sidebar__brand-text span {
+  margin-top: 3px;
+  color: var(--color-muted);
+  font-size: 10px;
+}
+
+.sidebar__navigation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 18px;
+}
+
+.sidebar__link {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--color-muted);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+.sidebar__link:hover {
+  color: var(--color-primary);
+  background: #f1f6ff;
+}
+
+.sidebar__link--active {
+  color: var(--color-primary);
+  background: #eaf2ff;
+}
+
+.sidebar__link--disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sidebar__link--disabled:hover {
+  color: var(--color-muted);
+  background: transparent;
+}
+
+.sidebar__icon {
+  width: 18px;
+  text-align: center;
+}
+
+.sidebar__footer {
+  padding: 14px 6px 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 10px;
+}
+
+.sidebar__system-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.sidebar__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    padding: 14px 16px;
+  }
+
+  .sidebar__brand {
+    padding: 0 0 14px;
+  }
+
+  .sidebar__navigation {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-top: 14px;
+  }
+
+  .sidebar__link {
+    flex: 0 0 auto;
+  }
+
+  .sidebar__footer {
+    display: none;
+  }
+}

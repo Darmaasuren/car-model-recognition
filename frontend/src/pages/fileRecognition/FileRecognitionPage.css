@@ -1,0 +1,128 @@
+.file-page {
+  min-width: 0;
+  min-height: 100vh;
+  padding: 18px 20px;
+}
+
+.file-page__heading {
+  margin-bottom: 16px;
+}
+
+.file-page__heading h1 {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.file-page__heading p {
+  margin: 5px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.file-page__content {
+  display: grid;
+  grid-template-columns:
+    minmax(480px, 1.1fr)
+    minmax(380px, 0.9fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.file-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-large);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.file-panel__header {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.file-panel__header h2 {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.file-panel__header p {
+  margin: 5px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.file-panel__body,
+.file-panel__results {
+  padding: 20px;
+}
+
+.file-panel__clear {
+  border: 0;
+  background: transparent;
+  color: var(--color-danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.file-panel__clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.file-panel__count {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.file-panel__error {
+  margin: 12px 0 0;
+  color: var(--color-danger);
+  font-size: 12px;
+}
+
+.file-panel__loading {
+  display: grid;
+  min-height: 250px;
+  place-content: center;
+  border: 1px dashed var(--color-border);
+  border-radius: 7px;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 1250px) {
+  .file-page__content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .file-page {
+    padding: 14px;
+  }
+
+  .file-panel__header,
+  .file-panel__body,
+  .file-panel__results {
+    padding: 16px;
+  }
+}

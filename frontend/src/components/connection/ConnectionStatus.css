@@ -1,0 +1,30 @@
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.connection-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.connection-status--connecting .connection-status__dot {
+  background: var(--color-warning);
+}
+
+.connection-status--connected .connection-status__dot {
+  background: var(--color-success);
+}
+
+.connection-status--disconnected .connection-status__dot,
+.connection-status--error .connection-status__dot {
+  background: var(--color-danger);
+}

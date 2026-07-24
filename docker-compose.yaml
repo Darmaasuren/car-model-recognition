@@ -1,0 +1,12 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: vehicle-recognition-backend:v1
+    container_name: vehicle-recognition-backend
+    env_file:
+      - ./backend/.env
+    ports:
+      - "8008:8000"
+    restart: unless-stopped
