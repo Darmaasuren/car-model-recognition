@@ -2,17 +2,25 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(BACKEND_ROOT / ".env")
 
-def resolve_path(value: str | Path) -> Path:
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path.resolve()
-    return (BACKEND_ROOT / path).resolve()
+DETECTOR_MODEL_PATH = (
+    BACKEND_ROOT / "checkpoints/detector/yolo11n.pt"
+).resolve()
+CLASSIFIER_MODEL_PATH = (
+    BACKEND_ROOT
+    / "checkpoints/classifier/best_model_resnet.pt"
+).resolve()
+MODEL_DEVICE = "cpu"
+DETECTOR_CONFIDENCE = 0.4
+
+MAX_IMAGE_BYTES = 15_728_640
+MAX_IMAGE_PIXELS = 12_000_000
+MAX_VIDEO_BYTES = 209_715_200
+MAX_VIDEO_SECONDS = 360.0
+
+RUNTIME_DIR = (BACKEND_ROOT / "runtime").resolve()
 
 
 def parse_origins(value: str | None) -> tuple[str, ...]:
@@ -34,6 +42,7 @@ def parse_origins(value: str | None) -> tuple[str, ...]:
 
     return origins
 
+
 def required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
 
@@ -43,6 +52,7 @@ def required_env(name: str) -> str:
         )
 
     return value
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -66,40 +76,22 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    runtime_dir = resolve_path(os.getenv("RUNTIME_DIR", "runtime"))
-
     return Settings(
-        api_prefix=os.getenv("API_PREFIX", "/api/v1"),
+        api_prefix=required_env("API_PREFIX"),
         api_key=required_env("API_KEY"),
         cors_origins=parse_origins(os.getenv("CORS_ORIGINS")),
-        detector_model_path=resolve_path(
-            os.getenv(
-                "DETECTOR_MODEL_PATH",
-                "../train/models/detector/yolo11n.pt",
-            )
-        ),
-        classifier_model_path=resolve_path(
-            os.getenv(
-                "CLASSIFIER_MODEL_PATH",
-                "../train/checkpoints/best_model.pt",
-            )
-        ),
-        detector_confidence=float(os.getenv("DETECTOR_CONFIDENCE", "0.4")),
-        device=os.getenv("MODEL_DEVICE", "auto"),
-        max_image_bytes=int(
-            os.getenv("MAX_IMAGE_BYTES", str(15 * 1024 * 1024))
-        ),
-        max_image_pixels=int(
-            os.getenv("MAX_IMAGE_PIXELS", "12000000")
-        ),
-        max_video_bytes=int(
-            os.getenv("MAX_VIDEO_BYTES", str(200 * 1024 * 1024))
-        ),
-        max_video_seconds=float(os.getenv("MAX_VIDEO_SECONDS", "120")),
-        runtime_dir=runtime_dir,
-        upload_dir=runtime_dir / "uploads",
-        crop_dir=runtime_dir / "crops",
-        output_dir=runtime_dir / "outputs",
+        detector_model_path=DETECTOR_MODEL_PATH,
+        classifier_model_path=CLASSIFIER_MODEL_PATH,
+        detector_confidence=DETECTOR_CONFIDENCE,
+        device=MODEL_DEVICE,
+        max_image_bytes=MAX_IMAGE_BYTES,
+        max_image_pixels=MAX_IMAGE_PIXELS,
+        max_video_bytes=MAX_VIDEO_BYTES,
+        max_video_seconds=MAX_VIDEO_SECONDS,
+        runtime_dir=RUNTIME_DIR,
+        upload_dir=RUNTIME_DIR / "uploads",
+        crop_dir=RUNTIME_DIR / "crops",
+        output_dir=RUNTIME_DIR / "outputs",
         camera_sources={
             "camera-1": os.getenv("CAMERA_1_SOURCE", "").strip(),
         },

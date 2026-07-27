@@ -11,13 +11,11 @@ interface ResultListProps {
 export function ResultList({
   results,
   emptyTitle = "Танилтын үр дүн одоогоор байхгүй.",
-  emptyDescription = "ROI дотор машин орж ирэхэд үр дүн энд харагдана.",
 }: ResultListProps) {
   if (results.length === 0) {
     return (
       <div className="result-list__empty">
         <p>{emptyTitle}</p>
-        <span>{emptyDescription}</span>
       </div>
     );
   }

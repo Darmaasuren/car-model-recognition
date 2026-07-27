@@ -7,7 +7,7 @@ __pycache__/
 .ruff_cache/
 
 # Runtime-generated files
-runtime/
+runtime
 
 .env
 .env.*

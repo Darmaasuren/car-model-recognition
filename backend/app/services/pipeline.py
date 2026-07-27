@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from math import hypot
 from uuid import uuid4
+from enum import Enum
 
 import cv2
 
@@ -10,6 +11,12 @@ from services.classifier import VehicleClassifier
 from services.detector import Detection, VehicleDetector
 from services.media import MediaService
 
+class PlateProcessStatus(str, Enum):
+    MATCHED = "MATCHED"
+    NO_VEHICLE_DETECTED = "NO_VEHICLE_DETECTED"
+    NO_MATCHING_VEHICLE = "NO_MATCHING_VEHICLE"
+    CLASSIFICATION_FAILED = "CLASSIFICATION_FAILED"
+
 
 @dataclass
 class TrackingState:
@@ -17,6 +24,12 @@ class TrackingState:
         default_factory=set
     )
 
+@dataclass(frozen=True)
+class PlateProcessOutcome:
+    status: PlateProcessStatus
+    vehicle_bbox: BoundingBox | None = None
+    match_score: float | None = None
+    result: RecognitionResult | None = None
 
 class RecognitionPipeline:
     padding_ratio = 0.10
@@ -49,8 +62,15 @@ class RecognitionPipeline:
         frame,
         plate_bbox: BoundingBox,
         persist_crop: bool = False,
-    ) -> tuple[BoundingBox, float, RecognitionResult] | None:
+    ) -> PlateProcessOutcome:
         detections = self.detector.detect(frame)
+
+        if not detections:
+            return PlateProcessOutcome(
+                status=(
+                    PlateProcessStatus.NO_VEHICLE_DETECTED
+                ),
+            )
 
         match = self._match_plate_to_vehicle(
             frame=frame,
@@ -59,7 +79,11 @@ class RecognitionPipeline:
         )
 
         if match is None:
-            return None
+            return PlateProcessOutcome(
+                status=(
+                    PlateProcessStatus.NO_MATCHING_VEHICLE
+                ),
+            )
 
         detection, match_score = match
 
@@ -71,7 +95,11 @@ class RecognitionPipeline:
         )
 
         if not results:
-            return None
+            return PlateProcessOutcome(
+                status=(
+                    PlateProcessStatus.CLASSIFICATION_FAILED
+                ),
+            )
 
         frame_height, frame_width = frame.shape[:2]
 
@@ -88,37 +116,12 @@ class RecognitionPipeline:
             y2=y2,
         )
 
-        return (
-            padded_vehicle_bbox,
-            match_score,
-            results[0],
+        return PlateProcessOutcome(
+            status=PlateProcessStatus.MATCHED,
+            vehicle_bbox=padded_vehicle_bbox,
+            match_score=match_score,
+            result=results[0],
         )
-        # frame_height, frame_width = frame.shape[:2]
-
-        # crop_x1 = max(0, detection.x1)
-        # crop_y1 = max(0, detection.y1)
-        # crop_x2 = min(frame_width, detection.x2)
-        # crop_y2 = min(frame_height, detection.y2)
-
-        # vehicle_crop = frame[
-        #     crop_y1:crop_y2,
-        #     crop_x1:crop_x2,
-        # ]
-
-        # if vehicle_crop.size == 0:
-        #     return None
-
-        # vehicle_crop_base64 = (
-        #     self.media.encode_image_data_url(vehicle_crop)
-        # )
-
-        return (
-            detection,
-            match_score,
-            results[0],
-            # vehicle_crop_base64,
-        )
-
     def process_tracked_frame(
         self,
         frame,
@@ -302,8 +305,21 @@ class RecognitionPipeline:
                 continue
 
             predictions = self.classifier.classify(crop)
-            event_id = uuid4().hex
+            has_prediction = bool(predictions) and any(
+                predictions.get(key) is not None
+                for key in (
+                    "model",
+                    "color",
+                    "type",
+                    "vehicle_type",
+                    "view",
+                )
+            )
 
+            if not has_prediction:
+                continue
+
+            event_id = uuid4().hex
             crop_url = None
 
             if persist_crop:

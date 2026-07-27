@@ -98,7 +98,7 @@ class BoundingBox(ApiModel):
 class PlateVehicleRequest(ApiModel):
     event_id: str | None = None
     image_base64: str = Field(min_length=1)
-    plate_bbox: BoundingBox = Field(alias="plateBBox")
+    plate_bbox: BoundingBox = Field(alias="plateBbox")
     
 
 class PlateVehicleResponse(ApiModel):
@@ -108,5 +108,10 @@ class PlateVehicleResponse(ApiModel):
     vehicle_bbox: BoundingBox | None = None
     match_score: float | None = None
     result: PlateRecognitionResult | None = None
+    reason_code: Literal[
+        "NO_VEHICLE_DETECTED",
+        "NO_MATCHING_VEHICLE",
+        "CLASSIFICATION_FAILED",
+    ] | None = None
     reason: str | None = None
     # vehicle_crop_base64: str | None = None

@@ -30,7 +30,10 @@ from schemas import (
     VideoStatusEvent,
 )
 from services.media import MediaTooLargeError
-from services.pipeline import TrackingState
+from services.pipeline import (
+    PlateProcessStatus,
+    TrackingState,
+)
 
 
 router = APIRouter(prefix="/inference")
@@ -92,7 +95,7 @@ async def process_plate_frame(
         )
 
     async with plate_inference_semaphore:
-        match = await run_in_threadpool(
+        outcome = await run_in_threadpool(
             pipeline.process_plate_event,
             frame,
             plate_bbox,
@@ -101,29 +104,36 @@ async def process_plate_frame(
 
     current_event_id = event_id or uuid4().hex
 
-    if match is None:
+    failure_messages = {
+        PlateProcessStatus.NO_VEHICLE_DETECTED: (
+            "Зураг дээр тээврийн хэрэгсэл илрээгүй."
+        ),
+        PlateProcessStatus.NO_MATCHING_VEHICLE: (
+            "Plate bbox-д тохирох тээврийн "
+            "хэрэгсэл олдсонгүй."
+        ),
+        PlateProcessStatus.CLASSIFICATION_FAILED: (
+            "Тээврийн хэрэгслийн ангиллын "
+            "үр дүн үүссэнгүй."
+        ),
+    }
+
+    if outcome.status != PlateProcessStatus.MATCHED:
         return PlateVehicleResponse(
             event_id=current_event_id,
             matched=False,
             plate_bbox=plate_bbox,
-            reason="Plate-д тохирох машин олдсонгүй.",
+            reason_code=outcome.status.value,
+            reason=failure_messages[outcome.status],
         )
-
-    (
-        padded_vehicle_bbox,
-        match_score,
-        result,
-        # vehicle_crop_base64,
-    ) = match
 
     return PlateVehicleResponse(
         event_id=current_event_id,
         matched=True,
         plate_bbox=plate_bbox,
-        vehicle_bbox=padded_vehicle_bbox,
-        # vehicle_crop_base64=vehicle_crop_base64,
-        match_score=match_score,
-        result=result,
+        vehicle_bbox=outcome.vehicle_bbox,
+        match_score=outcome.match_score,
+        result=outcome.result,
     )
 
 
@@ -237,7 +247,7 @@ async def recognize_video(
 
 
 @router.post(
-    "/plate-vehicle",
+    "/vehicle",
     response_model=PlateVehicleResponse,
     response_model_exclude_none=True,
     dependencies=[Depends(require_api_key)],
@@ -277,7 +287,7 @@ async def recognize_plate_vehicle_base64(
 
 
 @router.post(
-    "/plate-vehicle/upload",
+    "/vehicle/upload",
     response_model=PlateVehicleResponse,
     response_model_exclude_none=True,
     dependencies=[Depends(require_api_key)],

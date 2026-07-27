@@ -42,7 +42,7 @@ Example Base64 request:
 {
   "eventId": "camera-event-001",
   "imageBase64": "/9j/4AAQSkZJRgABAQ...",
-  "plateBBox": {
+  "plateBbox": {
     "x1": 420,
     "y1": 310,
     "x2": 510,
