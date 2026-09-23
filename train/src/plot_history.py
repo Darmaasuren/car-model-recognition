@@ -1,13 +1,11 @@
 import json
 import os
-from pathlib import Path
+from config import LOG_DIR
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import matplotlib.pyplot as plt
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOG_DIR = PROJECT_ROOT / "logs"
 history_path = LOG_DIR / "history.json"
 
 with history_path.open("r", encoding="utf-8") as f:
@@ -29,9 +27,25 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.savefig(LOG_DIR / "loss_curve.png", dpi=200)
-plt.show()
+plt.close()
 
 groups = ["model", "color", "type", "view"]
+
+for group in groups:
+    metric = f"{group}_loss"
+    if not all(metric in item[phase] for item in history for phase in ("train", "valid")):
+        continue
+    plt.figure(figsize=(8, 5))
+    for phase in ("train", "valid"):
+        plt.plot(epochs, [item[phase][metric] for item in history], label=phase)
+    plt.xlabel("Epoch")
+    plt.ylabel("Cross-entropy loss")
+    plt.title(f"{group} loss")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(LOG_DIR / f"{group}_loss_curve.png", dpi=200)
+    plt.close()
 
 for group in groups:
     train_acc = [item["train"][f"{group}_acc"] for item in history]
@@ -47,4 +61,21 @@ for group in groups:
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(LOG_DIR / f"{group}_accuracy_curve.png", dpi=200)
-    plt.show()
+    plt.close()
+
+# New histories include group and overall macro-F1.
+for metric in ["macro_f1"] + [f"{group}_macro_f1" for group in groups]:
+    if not all(metric in item[phase] for item in history for phase in ("train", "valid")):
+        continue
+    plt.figure(figsize=(8, 5))
+    for phase in ("train", "valid"):
+        plt.plot(epochs, [item[phase][metric] for item in history], label=phase)
+    plt.xlabel("Epoch")
+    plt.ylabel("Macro-F1")
+    plt.ylim(0, 1)
+    plt.title(metric)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(LOG_DIR / f"{metric}_curve.png", dpi=200)
+    plt.close()

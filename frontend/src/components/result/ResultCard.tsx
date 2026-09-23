@@ -4,6 +4,7 @@ import type {
   Prediction,
 } from "../../models/live";
 import "./ResultCard.css";
+import { SeatbeltDetails } from "./SeatbeltDetails";
 
 interface ResultCardProps {
   result: LiveRecognitionResult;
@@ -96,6 +97,7 @@ export function ResultCard({ result }: ResultCardProps) {
             prediction={result.view}
           />
         </div>
+        <SeatbeltDetails result={result.seatbelt} />
       </div>
     </article>
   );

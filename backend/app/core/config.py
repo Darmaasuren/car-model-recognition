@@ -2,18 +2,17 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 DETECTOR_MODEL_PATH = (
-    BACKEND_ROOT / "checkpoints/detector/yolo11n.pt"
+    BACKEND_ROOT / "checkpoints/detector/yolo11s.pt"
 ).resolve()
 CLASSIFIER_MODEL_PATH = (
     BACKEND_ROOT
-    / "checkpoints/classifier/best_model_resnet.pt"
+    / "checkpoints/classifier/best_loss_model_v3.pt"
 ).resolve()
 MODEL_DEVICE = "cpu"
-DETECTOR_CONFIDENCE = 0.4
+DETECTOR_CONFIDENCE = 0.2
 
 MAX_IMAGE_BYTES = 15_728_640
 MAX_IMAGE_PIXELS = 12_000_000
@@ -59,6 +58,9 @@ class Settings:
     api_prefix: str
     cors_origins: tuple[str, ...]
     api_key: str
+    session_cookie: str
+    session_seconds: int
+    cookie_secure: bool
 
     detector_model_path: Path
     classifier_model_path: Path
@@ -79,6 +81,9 @@ def get_settings() -> Settings:
     return Settings(
         api_prefix=required_env("API_PREFIX"),
         api_key=required_env("API_KEY"),
+        session_cookie="vehicle_session",
+        session_seconds=max(60, int(os.getenv("SESSION_SECONDS", "28800"))),
+        cookie_secure=os.getenv("COOKIE_SECURE", "true").lower() == "true",
         cors_origins=parse_origins(os.getenv("CORS_ORIGINS")),
         detector_model_path=DETECTOR_MODEL_PATH,
         classifier_model_path=CLASSIFIER_MODEL_PATH,

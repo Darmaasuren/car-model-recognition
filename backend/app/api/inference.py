@@ -14,13 +14,13 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from security import require_api_key
+from app.core.security import require_api_key
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from config import settings
-from schemas import (
+from app.core.config import settings
+from app.schemas.recognition import (
     BoundingBox,
     InferenceResponse,
     PlateVehicleRequest,
@@ -29,8 +29,9 @@ from schemas import (
     VideoSessionResponse,
     VideoStatusEvent,
 )
-from services.media import MediaTooLargeError
-from services.pipeline import (
+from app.services.media import MediaTooLargeError
+from app.services.seatbelt_client import enrich_results, recognize_file_image
+from app.services.pipeline import (
     PlateProcessStatus,
     TrackingState,
 )
@@ -164,7 +165,8 @@ async def recognize_image(
             raise invalid_media(error) from error
 
         results = await run_in_threadpool(
-            pipeline.process_image,
+            recognize_file_image,
+            pipeline,
             frame,
         )
 
@@ -226,7 +228,7 @@ async def recognize_video(
                     )
                 )
 
-                results.extend(frame_results)
+                results.extend(enrich_results(frame, frame_results))
         finally:
             capture.release()
 

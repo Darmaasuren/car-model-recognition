@@ -2,6 +2,8 @@
 **/.env
 !**/.env.example
 .venv/
+.env
+train
 
 # Python
 **/__pycache__/

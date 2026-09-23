@@ -1,7 +1,7 @@
 import json
 import random
 import time
-from typing import Dict, Mapping, Sequence
+from typing import Dict
 
 import numpy as np
 import torch
@@ -17,6 +17,7 @@ from config import (
     CHECKPOINT_DIR,
     CLASS_WEIGHT_GROUPS,
     CLASS_WEIGHT_MAX,
+    DATA_ROOT,
     EARLY_STOP_MIN_DELTA,
     EARLY_STOP_PATIENCE,
     EPOCHS,
@@ -36,7 +37,7 @@ from config import (
     USE_LR_SCHEDULER,
     WEIGHT_DECAY,
 )
-from dataset import CarClassificationDataset
+from dataset import CarClassificationDataset, write_model_type_report
 from model import build_model
 
 
@@ -53,10 +54,16 @@ def build_data_loaders() -> Dict[str, DataLoader]:
     label_groups = train_dataset.get_label_groups()
     #get validation dataset with the same label groups
     valid_dataset = CarClassificationDataset("valid", augment=False, label_groups=label_groups)
+    if not len(train_dataset) or not len(valid_dataset):
+        raise ValueError("Train and valid datasets must contain valid labeled images.")
+    train_filters = train_dataset.get_filter_counts()
+    valid_filters = valid_dataset.get_filter_counts()
     print(
         "Dataset sizes  "
-        f"train={len(train_dataset)} filtered={train_dataset.get_filtered_rows()}  "
-        f"valid={len(valid_dataset)} filtered={valid_dataset.get_filtered_rows()}"
+        f"train={len(train_dataset)} filtered_invalid={train_filters['invalid_labels']} "
+        f"filtered_model_type={train_filters['model_type_mismatch']}  "
+        f"valid={len(valid_dataset)} filtered_invalid={valid_filters['invalid_labels']} "
+        f"filtered_model_type={valid_filters['model_type_mismatch']}"
     )
 
     return {
@@ -76,48 +83,25 @@ def build_data_loaders() -> Dict[str, DataLoader]:
         ),
     }
 
-#loss function for multi-task classification, ignoring labels with IGNORE_INDEX
-def compute_loss(
+#loss for each label group, ignoring labels with IGNORE_INDEX
+def compute_group_losses(
     outputs: Dict[str, torch.Tensor],
     targets: Dict[str, torch.Tensor],
     class_weights: Dict[str, torch.Tensor] | None = None,
-) -> torch.Tensor:
-    losses = []
+) -> Dict[str, torch.Tensor]:
+    losses = {}
     class_weights = class_weights or {}
     for group_name, logits in outputs.items():
         group_targets = targets[group_name]
         valid_mask = group_targets != IGNORE_INDEX
         if valid_mask.any():
-            losses.append(
-                nn.functional.cross_entropy(
-                    logits[valid_mask],
-                    group_targets[valid_mask],
-                    weight=class_weights.get(group_name),
-                )
+            losses[group_name] = nn.functional.cross_entropy(
+                logits[valid_mask],
+                group_targets[valid_mask],
+                weight=class_weights.get(group_name),
             )
-    if not losses:
-        first_output = next(iter(outputs.values()))
-        return first_output.sum() * 0
-    return sum(losses)
+    return losses
 
-#accuracy metrics for each label group
-def compute_metrics(
-    outputs: Dict[str, torch.Tensor],
-    targets: Dict[str, torch.Tensor],
-    label_groups: Mapping[str, Sequence[str]],
-) -> Dict[str, int]:
-    metrics = {}
-    for group_name in label_groups:
-        group_targets = targets[group_name]
-        valid_mask = group_targets != IGNORE_INDEX
-        total = int(valid_mask.sum().item())
-        correct = 0
-        if total:
-            predictions = outputs[group_name].argmax(dim=1)
-            correct = int((predictions[valid_mask] == group_targets[valid_mask]).sum().item())
-        metrics[f"{group_name}_correct"] = correct
-        metrics[f"{group_name}_total"] = total
-    return metrics
 
 #move targets to the specified device (CPU or GPU)
 def move_targets_to_device(targets: Dict[str, torch.Tensor], device: torch.device) -> Dict[str, torch.Tensor]:
@@ -126,7 +110,7 @@ def move_targets_to_device(targets: Dict[str, torch.Tensor], device: torch.devic
 def format_metrics(metrics: Dict[str, float], prefix: str) -> str:
     parts = [f"{prefix}_loss={metrics['loss']:.4f}"]
     for name, value in metrics.items():
-        if name.endswith("_acc"):
+        if name.endswith(("_loss", "_acc", "_macro_f1")) or name == "macro_f1":
             parts.append(f"{prefix}_{name}={value:.4f}")
     return "  ".join(parts)
 
@@ -134,9 +118,13 @@ def format_metrics(metrics: Dict[str, float], prefix: str) -> str:
 def format_epoch_metrics(metrics: Dict[str, float]) -> str:
     parts = [f"loss {metrics['loss']:.4f}"]
     for name, value in metrics.items():
-        if name.endswith("_acc"):
+        if name.endswith("_loss"):
+            parts.append(f"{name} {value:.4f}")
+        elif name.endswith("_acc"):
             group_name = name.removesuffix("_acc")
             parts.append(f"{group_name} {value:.3f}")
+        elif name.endswith("_macro_f1") or name == "macro_f1":
+            parts.append(f"{name} {value:.4f}")
     if "elapsed_seconds" in metrics:
         parts.append(f"time {metrics['elapsed_seconds']:.1f}s")
     if "avg_batch_seconds" in metrics:
@@ -149,8 +137,9 @@ def print_epoch_summary(
     train_metrics: Dict[str, float],
     valid_metrics: Dict[str, float],
     valid_score: float,
-    checkpoint_saved: bool,
-    best_val_loss: float,
+    f1_checkpoint_saved: bool,
+    loss_checkpoint_saved: bool,
+    best_valid_score: float,
     best_epoch: int,
     epochs_without_improvement: int,
     learning_rate: float,
@@ -158,10 +147,16 @@ def print_epoch_summary(
     print(f"\nEpoch {epoch:02d}/{EPOCHS}")
     print(f"  train | {format_epoch_metrics(train_metrics)}")
     print(f"  valid | {format_epoch_metrics(valid_metrics)} | score {valid_score:.3f} | lr {learning_rate:.2e}")
-    if checkpoint_saved:
-        print(f"  checkpoint | saved, best valid_loss {best_val_loss:.4f} at epoch {best_epoch:02d}")
-    else:
-        print(f"  early_stop | no improvement {epochs_without_improvement}/{EARLY_STOP_PATIENCE}")
+    if f1_checkpoint_saved:
+        print(f"  checkpoint | best_model_v3.pt saved, macro-F1 {best_valid_score:.4f} at epoch {best_epoch:02d}")
+    if loss_checkpoint_saved:
+        print("  checkpoint | best_loss_model_v3.pt saved, "
+              f"validation loss {valid_metrics['loss']:.4f} at epoch {epoch:02d}")
+    if not f1_checkpoint_saved:
+        if epoch <= FREEZE_BACKBONE_EPOCHS:
+            print("  early_stop | paused while backbone is frozen")
+        else:
+            print(f"  early_stop | no improvement {epochs_without_improvement}/{EARLY_STOP_PATIENCE}")
 
 
 def set_backbone_trainable(model, trainable: bool) -> None:
@@ -169,6 +164,20 @@ def set_backbone_trainable(model, trainable: bool) -> None:
         param.requires_grad = trainable
     model.backbone.train(trainable)
 
+def macro_f1_from_confusion(matrix):
+    matrix = matrix.float()
+
+    tp = matrix.diag()
+    fp = matrix.sum(dim=0) - tp
+    fn = matrix.sum(dim=1) - tp
+
+    denominator = 2 * tp + fp + fn
+    f1 = torch.where(
+        denominator > 0,
+        2 * tp / denominator.clamp_min(1),
+        torch.zeros_like(tp),
+    )
+    return f1.mean().item()
 
 #train or validate the model for one epoch, returning metrics
 def run_epoch(
@@ -181,6 +190,7 @@ def run_epoch(
     phase="train",
     class_weights=None,
     freeze_backbone=False,
+    on_batch=None,
 ):
     epoch_start_time = time.perf_counter()
     training = optimizer is not None
@@ -188,9 +198,17 @@ def run_epoch(
     if training and freeze_backbone:
         model.backbone.eval()
     total_loss = 0.0
+    group_loss_totals = {group_name: 0.0 for group_name in label_groups}
     seen_images = 0
     batch_times = []
-    totals = {group_name: {"correct": 0, "total": 0} for group_name in label_groups}
+    confusions = {
+        name: torch.zeros(
+            (len(labels), len(labels)),
+            dtype=torch.long,
+            device=device,
+        )
+        for name, labels in label_groups.items()
+    }
     progress = tqdm(
         loader,
         desc=f"{phase} {epoch:02d}/{EPOCHS}",
@@ -204,7 +222,8 @@ def run_epoch(
             images = batch["image"].to(device)
             targets = move_targets_to_device(batch["targets"], device)
             outputs = model(images)
-            loss = compute_loss(outputs, targets, class_weights=class_weights)
+            group_losses = compute_group_losses(outputs, targets, class_weights)
+            loss = sum(group_losses.values()) if group_losses else next(iter(outputs.values())).sum() * 0
 
             if training:
                 optimizer.zero_grad(set_to_none=True)
@@ -213,6 +232,8 @@ def run_epoch(
 
             batch_size = images.size(0)
             total_loss += loss.item() * batch_size
+            for group_name, group_loss in group_losses.items():
+                group_loss_totals[group_name] += group_loss.item() * batch_size
             seen_images += batch_size
             avg_loss = total_loss / max(seen_images, 1)
             batch_time = time.perf_counter() - batch_start_time
@@ -224,10 +245,21 @@ def run_epoch(
                 batch_s=f"{batch_time:.2f}",
                 elapsed=f"{elapsed_time:.0f}s",
             )
-            batch_metrics = compute_metrics(outputs, targets, label_groups)
-            for group_name in label_groups:
-                totals[group_name]["correct"] += batch_metrics[f"{group_name}_correct"]
-                totals[group_name]["total"] += batch_metrics[f"{group_name}_total"]
+
+            for name, labels in label_groups.items():
+                valid_mask = targets[name] != IGNORE_INDEX
+                true_labels = targets[name][valid_mask]
+                predictions = outputs[name].detach().argmax(dim=1)[valid_mask]
+
+                num_classes = len(labels)
+                indices = true_labels * num_classes + predictions
+
+                confusions[name] += torch.bincount(
+                    indices,
+                    minlength=num_classes * num_classes,
+                ).reshape(num_classes, num_classes)
+            if on_batch is not None:
+                on_batch(batch, outputs)
 
     elapsed_seconds = time.perf_counter() - epoch_start_time
     metrics = {
@@ -235,17 +267,21 @@ def run_epoch(
         "elapsed_seconds": elapsed_seconds,
         "avg_batch_seconds": sum(batch_times) / len(batch_times) if batch_times else 0.0,
     }
-    for group_name, counts in totals.items():
-        metrics[f"{group_name}_acc"] = (
-            counts["correct"] / counts["total"] if counts["total"] else 0.0
-        )
+    for group_name, group_total in group_loss_totals.items():
+        metrics[f"{group_name}_loss"] = group_total / len(loader.dataset)
+    for name, matrix in confusions.items():
+        correct = int(matrix.diag().sum().item())
+        total = int(matrix.sum().item())
+        metrics[f"{name}_acc"] = correct / total if total else 0.0
+    for name, matrix in confusions.items():
+        metrics[f"{name}_macro_f1"] = macro_f1_from_confusion(matrix)
+
+    metrics["macro_f1"] = sum(
+        metrics[f"{name}_macro_f1"]
+        for name in label_groups
+    ) / len(label_groups)
+
     return metrics
-
-#average accuracy across all label groups for validation scoring
-def average_accuracy(metrics: Dict[str, float], label_groups: Mapping[str, Sequence[str]]) -> float:
-    accuracies = [metrics[f"{group_name}_acc"] for group_name in label_groups]
-    return sum(accuracies) / len(accuracies)
-
 
 def build_class_weights(train_dataset, label_groups, device) -> Dict[str, torch.Tensor]:
     if not USE_CLASS_WEIGHTS:
@@ -281,6 +317,53 @@ def build_class_weights(train_dataset, label_groups, device) -> Dict[str, torch.
 def current_learning_rate(optimizer) -> float:
     return optimizer.param_groups[0]["lr"]
 
+
+def save_checkpoint(path, model, label_groups, epoch, valid_metrics, learning_rate, monitor):
+    checkpoint = {
+        "model_state": model.state_dict(),
+        "data_root": str(DATA_ROOT),
+        "label_groups": dict(label_groups),
+        "epoch": epoch,
+        "backbone_name": BACKBONE_NAME,
+        "head_dropout": HEAD_DROPOUT,
+        "image_size": IMAGE_SIZE[0],
+        "freeze_backbone_epochs": FREEZE_BACKBONE_EPOCHS,
+        "monitor": monitor,
+        "valid_metrics": valid_metrics,
+        "valid_score": valid_metrics["macro_f1"],
+        "learning_rate": learning_rate,
+    }
+    if monitor == "valid_macro_f1":
+        checkpoint["best_valid_score"] = valid_metrics["macro_f1"]
+    else:
+        checkpoint["best_valid_loss"] = valid_metrics["loss"]
+    torch.save(checkpoint, path)
+
+
+def save_history(history, best_epoch, best_valid_score, best_loss_epoch, best_valid_loss, stopped_epoch):
+    payload = {
+        "data_root": str(DATA_ROOT),
+        "history": history,
+        "early_stopping": {
+            "monitor": "valid_macro_f1",
+            "mode": "max",
+            "patience": EARLY_STOP_PATIENCE,
+            "min_delta": EARLY_STOP_MIN_DELTA,
+            "best_epoch": best_epoch,
+            "best_valid_score": best_valid_score,
+            "stopped_epoch": stopped_epoch,
+        },
+        "best_validation_loss": {
+            "epoch": best_loss_epoch,
+            "loss": best_valid_loss,
+        },
+    }
+    history_path = LOG_DIR / "history.json"
+    temporary_path = LOG_DIR / "history.json.tmp"
+    with temporary_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    temporary_path.replace(history_path)
+
 #use the train_one_epoch 
 def train_one_epoch(model, loader, optimizer, device, label_groups, epoch, class_weights=None):
     return run_epoch(
@@ -296,8 +379,8 @@ def train_one_epoch(model, loader, optimizer, device, label_groups, epoch, class
     )
 
 #use the validate function to evaluate the model on validation or test datasets
-def validate(model, loader, device, label_groups, epoch=0, phase="valid"):
-    return run_epoch(model, loader, device, label_groups, epoch=epoch, phase=phase)
+def validate(model, loader, device, label_groups, epoch=0, phase="valid", on_batch=None):
+    return run_epoch(model, loader, device, label_groups, epoch=epoch, phase=phase, on_batch=on_batch)
 
 
 def main():
@@ -307,8 +390,13 @@ def main():
     #build data loaders for train and validation datasets
     loaders = build_data_loaders()
     label_groups = loaders["train"].dataset.get_label_groups()
-    #build the multi-task classification
-    model = build_model(label_groups=label_groups).to(device)
+    model = build_model(
+        label_groups=label_groups,
+        backbone_name=BACKBONE_NAME,
+        head_dropout=HEAD_DROPOUT,
+        pretrained=True,
+    ).to(device)
+
     if FREEZE_BACKBONE_EPOCHS > 0:
         set_backbone_trainable(model, False)
         print(f"Backbone frozen for first {FREEZE_BACKBONE_EPOCHS} epochs")
@@ -329,15 +417,21 @@ def main():
 
     CHECKPOINT_DIR.mkdir(exist_ok=True)
     LOG_DIR.mkdir(exist_ok=True)
+    report_path = LOG_DIR / "filtered_model_type_rows.csv"
+    write_model_type_report([loaders["train"].dataset, loaders["valid"].dataset], report_path)
+    print(f"Model/type mismatches excluded: {report_path}")
 
-    best_val_loss = float("inf")
+    best_valid_score = float("-inf")
+    best_valid_loss = float("inf")
     best_epoch = 0
+    best_loss_epoch = 0
     epochs_without_improvement = 0
     stopped_epoch = None
     history = []
     for epoch in range(1, EPOCHS + 1):
         if FREEZE_BACKBONE_EPOCHS > 0 and epoch == FREEZE_BACKBONE_EPOCHS + 1:
             set_backbone_trainable(model, True)
+            epochs_without_improvement = 0
             print(f"Backbone unfrozen after {FREEZE_BACKBONE_EPOCHS} epochs")
 
         train_metrics = train_one_epoch(
@@ -350,7 +444,7 @@ def main():
             class_weights=class_weights,
         )
         valid_metrics = validate(model, loaders["valid"], device, label_groups, epoch=epoch, phase="valid")
-        valid_score = average_accuracy(valid_metrics, label_groups)
+        valid_score = valid_metrics["macro_f1"]
         valid_loss = valid_metrics["loss"]
         epoch_learning_rate = current_learning_rate(optimizer)
         history.append(
@@ -363,69 +457,52 @@ def main():
             }
         )
 
-        checkpoint_saved = False
-        if valid_loss < best_val_loss - EARLY_STOP_MIN_DELTA:
-            best_val_loss = valid_loss
+        f1_checkpoint_saved = False
+        if valid_score > best_valid_score + EARLY_STOP_MIN_DELTA:
+            best_valid_score = valid_score
             best_epoch = epoch
             epochs_without_improvement = 0
-            checkpoint_saved = True
-            torch.save(
-                {
-                    "model_state": model.state_dict(),
-                    "label_groups": dict(label_groups),
-                    "epoch": epoch,
-                    "backbone_name": BACKBONE_NAME,
-                    "head_dropout": HEAD_DROPOUT,
-                    "image_size": IMAGE_SIZE[0],
-                    "freeze_backbone_epochs": FREEZE_BACKBONE_EPOCHS,
-                    "monitor": "valid_loss",
-                    "best_valid_loss": best_val_loss,
-                    "valid_metrics": valid_metrics,
-                    "valid_score": valid_score,
-                    "learning_rate": epoch_learning_rate,
-                },
-                CHECKPOINT_DIR / "best_model.pt",
+            f1_checkpoint_saved = True
+            save_checkpoint(
+                CHECKPOINT_DIR / "best_model_v3.pt", model, label_groups, epoch,
+                valid_metrics, epoch_learning_rate, "valid_macro_f1",
             )
-        else:
+        elif epoch > FREEZE_BACKBONE_EPOCHS:
             epochs_without_improvement += 1
+
+        loss_checkpoint_saved = valid_loss < best_valid_loss
+        if loss_checkpoint_saved:
+            best_valid_loss = valid_loss
+            best_loss_epoch = epoch
+            save_checkpoint(
+                CHECKPOINT_DIR / "best_loss_model_v3.pt", model, label_groups, epoch,
+                valid_metrics, epoch_learning_rate, "valid_loss",
+            )
         print_epoch_summary(
             epoch=epoch,
             train_metrics=train_metrics,
             valid_metrics=valid_metrics,
             valid_score=valid_score,
-            checkpoint_saved=checkpoint_saved,
-            best_val_loss=best_val_loss,
+            f1_checkpoint_saved=f1_checkpoint_saved,
+            loss_checkpoint_saved=loss_checkpoint_saved,
+            best_valid_score=best_valid_score,
             best_epoch=best_epoch,
             epochs_without_improvement=epochs_without_improvement,
             learning_rate=epoch_learning_rate,
         )
         if scheduler is not None:
             scheduler.step(valid_loss)
-        if not checkpoint_saved:
-            if epochs_without_improvement >= EARLY_STOP_PATIENCE:
-                stopped_epoch = epoch
-                print(f"Early stopping at epoch {epoch}. Best epoch: {best_epoch}")
-                break
-
-    with (LOG_DIR / "history.json").open("w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "history": history,
-                "early_stopping": {
-                    "monitor": "valid_loss",
-                    "mode": "min",
-                    "patience": EARLY_STOP_PATIENCE,
-                    "min_delta": EARLY_STOP_MIN_DELTA,
-                    "best_epoch": best_epoch,
-                    "best_valid_loss": best_val_loss,
-                    "stopped_epoch": stopped_epoch,
-                },
-            },
-            f,
-            indent=2,
+        if epoch > FREEZE_BACKBONE_EPOCHS and epochs_without_improvement >= EARLY_STOP_PATIENCE:
+            stopped_epoch = epoch
+            print(f"Early stopping at epoch {epoch}. Best epoch: {best_epoch}")
+        save_history(
+            history, best_epoch, best_valid_score, best_loss_epoch, best_valid_loss, stopped_epoch,
         )
+        if stopped_epoch is not None:
+            break
 
-    print(f"Best checkpoint: {CHECKPOINT_DIR / 'best_model.pt'}")
+    print(f"Best macro-F1 checkpoint: {CHECKPOINT_DIR / 'best_model_v3.pt'}")
+    print(f"Best validation-loss checkpoint: {CHECKPOINT_DIR / 'best_loss_model_v3.pt'}")
 
 
 if __name__ == "__main__":

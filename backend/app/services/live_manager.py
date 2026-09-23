@@ -4,8 +4,8 @@ from time import sleep
 
 import cv2
 
-from schemas import RecognitionEvent
-from services.pipeline import (
+from app.schemas.recognition import RecognitionEvent
+from app.services.pipeline import (
     RecognitionPipeline,
     TrackingState,
 )

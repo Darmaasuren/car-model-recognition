@@ -1,7 +1,12 @@
+import { useState } from "react";
+import { useAuth } from "../../auth/AuthContext";
 import { NavLink } from "react-router-dom";
 import "./Sidebar.css";
 
 export function Sidebar() {
+  const { user, signOut } = useAuth();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   return (
     <aside className="sidebar">
       <div className="sidebar__brand">
@@ -41,6 +46,16 @@ export function Sidebar() {
           <span>Файл таних</span>
         </NavLink>
 
+        <NavLink
+          to="/service"
+          className={({ isActive }) =>
+            isActive ? "sidebar__link sidebar__link--active" : "sidebar__link"
+          }
+        >
+          <span className="sidebar__icon">⇄</span>
+          <span>Service харьцуулах</span>
+        </NavLink>
+
         {/* <div
           className="sidebar__link sidebar__link--disabled"
           aria-disabled="true"
@@ -51,7 +66,14 @@ export function Sidebar() {
       </nav>
 
       <footer className="sidebar__footer">
-        <span>Системийн төлөв</span>
+        <span>{user?.username} · {user?.role}</span>
+        <button disabled={busy} onClick={async () => {
+          setBusy(true); setError("");
+          try { await signOut(); }
+          catch { setError("Гарахад алдаа гарлаа. Дахин оролдоно уу."); }
+          finally { setBusy(false); }
+        }}>Гарах</button>
+        {error && <p role="alert">{error}</p>}
 
         <div className="sidebar__system-state">
           <span className="sidebar__status-dot" />

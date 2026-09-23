@@ -1,0 +1,20 @@
+.seatbelt-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.seatbelt-details h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
+.seatbelt-details__results { display: flex; flex-wrap: wrap; gap: 6px; }
+.seatbelt-details p { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.seatbelt-details__reason { color: var(--color-muted); }
+.seatbelt-details__error { color: var(--color-danger); }
+.seatbelt-details__badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.seatbelt-details__badge--success { color: #15803d; background: #f0fdf4; }
+.seatbelt-details__badge--danger { color: var(--color-danger); background: #fef2f2; }

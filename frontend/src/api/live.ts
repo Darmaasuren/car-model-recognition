@@ -62,7 +62,8 @@ export function connectLiveEvents({
     onError();
   };
 
-  socket.onclose = () => {
+  socket.onclose = (event) => {
+    if (event.code === 4401) window.dispatchEvent(new Event("auth-expired"));
     onDisconnected();
   };
 

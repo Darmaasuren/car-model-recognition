@@ -1,7 +1,7 @@
 import csv
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, OrderedDict as OrderedDictType, Tuple
+from typing import Dict, List, OrderedDict as OrderedDictType, Sequence, Tuple
 
 import torch
 from PIL import Image
@@ -10,6 +10,8 @@ from torchvision import transforms
 
 from config import (
     DATA_SPLITS,
+    EXPECTED_TYPES,
+    FILTER_INCONSISTENT_MODEL_TYPE_ROWS,
     FILTER_INVALID_LABEL_ROWS,
     IGNORE_INDEX,
     IMAGE_SIZE,
@@ -93,6 +95,16 @@ def _is_valid_multitask_label(raw_labels: Dict[str, int], label_groups: LabelGro
             return False
     return True
 
+
+def _model_type_mismatch(raw_labels: Dict[str, int], label_groups: LabelGroups):
+    models = [label for label in label_groups["model"] if raw_labels.get(label, 0) == 1]
+    types = [label for label in label_groups["type"] if raw_labels.get(label, 0) == 1]
+    if len(models) != 1 or len(types) != 1:
+        return None
+    model, actual_type = models[0], types[0]
+    expected_type = EXPECTED_TYPES[model]
+    return (model, actual_type, expected_type) if actual_type != expected_type else None
+
 #get dataset class for car classification
 class CarClassificationDataset(Dataset):
     def __init__(self, split: str, augment: bool = False, label_groups: LabelGroups | None = None):
@@ -100,17 +112,57 @@ class CarClassificationDataset(Dataset):
         self.split_path = DATA_SPLITS[split]
         self.label_groups = label_groups or get_label_groups()
         validate_csv_labels(self.split_path / "_classes.csv", self.label_groups)
+        if FILTER_INCONSISTENT_MODEL_TYPE_ROWS:
+            missing_models = set(self.label_groups["model"]) - EXPECTED_TYPES.keys()
+            expected_types = {
+                EXPECTED_TYPES[model]
+                for model in self.label_groups["model"]
+                if model in EXPECTED_TYPES
+            }
+            unknown_types = expected_types - set(self.label_groups["type"])
+            if missing_models or unknown_types:
+                raise ValueError(
+                    f"Model/type rules do not match configured labels: "
+                    f"missing_models={sorted(missing_models)}, unknown_types={sorted(unknown_types)}"
+                )
         self.image_paths, self.raw_labels = _read_label_csv(self.split_path, self.label_groups)
         self.filtered_rows = 0
-        if FILTER_INVALID_LABEL_ROWS:
-            valid_items = [
-                (image_path, raw_labels)
-                for image_path, raw_labels in zip(self.image_paths, self.raw_labels)
-                if _is_valid_multitask_label(raw_labels, self.label_groups)
-            ]
+        self.filtered_label_rows = 0
+        self.filtered_model_type_rows = []
+        if FILTER_INVALID_LABEL_ROWS or FILTER_INCONSISTENT_MODEL_TYPE_ROWS:
+            valid_items = []
+            for line_number, (image_path, raw_labels) in enumerate(
+                zip(self.image_paths, self.raw_labels), start=2
+            ):
+                if FILTER_INVALID_LABEL_ROWS and not _is_valid_multitask_label(raw_labels, self.label_groups):
+                    self.filtered_label_rows += 1
+                    continue
+                mismatch = (
+                    _model_type_mismatch(raw_labels, self.label_groups)
+                    if FILTER_INCONSISTENT_MODEL_TYPE_ROWS else None
+                )
+                if mismatch:
+                    model, actual_type, expected_type = mismatch
+                    self.filtered_model_type_rows.append({
+                        "line": line_number,
+                        "filename": image_path.name,
+                        "model": model,
+                        "actual_type": actual_type,
+                        "expected_type": expected_type,
+                    })
+                    continue
+                valid_items.append((image_path, raw_labels))
             self.filtered_rows = len(self.image_paths) - len(valid_items)
             self.image_paths = [image_path for image_path, _ in valid_items]
             self.raw_labels = [raw_labels for _, raw_labels in valid_items]
+
+        self.target_indices = []
+        for raw_labels in self.raw_labels:
+            indices = {}
+            for group_name, labels in self.label_groups.items():
+                active = [idx for idx, label in enumerate(labels) if raw_labels.get(label, 0) == 1]
+                indices[group_name] = active[0] if len(active) == 1 else IGNORE_INDEX
+            self.target_indices.append(indices)
 
         self.transform = self._build_transform(augment)
 
@@ -142,13 +194,10 @@ class CarClassificationDataset(Dataset):
         image = Image.open(self.image_paths[idx]).convert("RGB")
         image = self.transform(image)
 
-        raw = self.raw_labels[idx]
-        #target every label group, if multiple labels are active, set to IGNORE_INDEX
-        targets = {}
-        for group_name, labels in self.label_groups.items():
-            active = [label_idx for label_idx, label in enumerate(labels) if raw.get(label, 0) == 1]
-            target = active[0] if len(active) == 1 else IGNORE_INDEX
-            targets[group_name] = torch.tensor(target, dtype=torch.long)
+        targets = {
+            group_name: torch.tensor(target, dtype=torch.long)
+            for group_name, target in self.target_indices[idx].items()
+        }
 
         return {
             "image": image,
@@ -161,3 +210,22 @@ class CarClassificationDataset(Dataset):
 
     def get_filtered_rows(self) -> int:
         return self.filtered_rows
+
+    def get_filter_counts(self) -> Dict[str, int]:
+        return {
+            "invalid_labels": self.filtered_label_rows,
+            "model_type_mismatch": len(self.filtered_model_type_rows),
+        }
+
+    def get_model_type_mismatches(self):
+        return list(self.filtered_model_type_rows)
+
+
+def write_model_type_report(datasets: Sequence[CarClassificationDataset], report_path: Path) -> None:
+    fieldnames = ["split", "line", "filename", "model", "actual_type", "expected_type"]
+    with report_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for dataset in datasets:
+            for mismatch in dataset.get_model_type_mismatches():
+                writer.writerow({"split": dataset.split, **mismatch})

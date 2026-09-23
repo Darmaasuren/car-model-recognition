@@ -6,10 +6,10 @@ from enum import Enum
 
 import cv2
 
-from schemas import BoundingBox, Prediction, RecognitionResult
-from services.classifier import VehicleClassifier
-from services.detector import Detection, VehicleDetector
-from services.media import MediaService
+from app.schemas.recognition import BoundingBox, Prediction, RecognitionResult
+from app.services.classifier import VehicleClassifier
+from app.services.detector import Detection, VehicleDetector
+from app.services.media import MediaService
 
 class PlateProcessStatus(str, Enum):
     MATCHED = "MATCHED"
@@ -334,6 +334,7 @@ class RecognitionPipeline:
                     track_id=detection.track_id,
                     detected_at=datetime.now().astimezone(),
                     crop_url=crop_url,
+                    vehicle_bbox=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
                     model=self._prediction(
                         predictions.get("model")
                     ),

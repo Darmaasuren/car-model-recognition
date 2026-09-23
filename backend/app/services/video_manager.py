@@ -8,9 +8,10 @@ from uuid import uuid4
 
 import cv2
 
-from schemas import RecognitionResult
-from services.media import MediaService
-from services.pipeline import RecognitionPipeline, TrackingState
+from app.schemas.recognition import RecognitionResult
+from app.services.media import MediaService
+from app.services.seatbelt_client import enrich_results
+from app.services.pipeline import RecognitionPipeline, TrackingState
 
 
 VideoStatus = Literal[
@@ -120,6 +121,8 @@ class VideoSessionManager:
                     frame,
                     session.tracking_state,
                 )
+
+                enrich_results(frame, results)
 
                 encoded_success, encoded = cv2.imencode(
                     ".jpg",

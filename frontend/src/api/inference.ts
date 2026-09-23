@@ -1,5 +1,6 @@
 import type { LiveRecognitionResult } from "../models/live";
 import {
+  apiFetch,
   buildApiUrl,
   buildWebSocketUrl,
 } from "./client";
@@ -46,7 +47,7 @@ export async function recognizeFile(
     ? "/inference/video"
     : "/inference/image";
 
-  const response = await fetch(buildApiUrl(endpoint), {
+  const response = await apiFetch(buildApiUrl(endpoint), {
     method: "POST",
     body: formData,
   });
@@ -68,7 +69,7 @@ export async function createVideoSession(
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(
+  const response = await apiFetch(
     buildApiUrl("/inference/video/sessions"),
     {
       method: "POST",
@@ -137,6 +138,9 @@ export function connectVideoSessionEvents({
   };
 
   socket.onerror = onError;
+  socket.onclose = (event) => {
+    if (event.code === 4401) window.dispatchEvent(new Event("auth-expired"));
+  };
 
   return () => {
     socket.close();
@@ -146,7 +150,7 @@ export function connectVideoSessionEvents({
 export async function stopVideoSession(
   sessionId: string,
 ): Promise<void> {
-  await fetch(
+  await apiFetch(
     buildApiUrl(
       `/inference/video/sessions/${encodeURIComponent(sessionId)}`,
     ),

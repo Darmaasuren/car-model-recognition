@@ -1,11 +1,35 @@
 services:
   backend:
+    build: ./backend
     image: vehicle-recognition-backend:v1
     container_name: vehicle-recognition-backend
-    environment:
-      API_PREFIX: "/api/v1"
-      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
-      API_KEY: "d7d5b283df0ef5bf9b803b2eea2689bc7d1c60e562784ea40f35746ba2f60c23"
+    env_file:
+      - .env
     ports:
       - "8008:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend/runtime:/app/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5433:5432"
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

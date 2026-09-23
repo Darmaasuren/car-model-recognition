@@ -1,0 +1,7 @@
+.login-page { min-height: 100vh; display: grid; place-items: center; background: #f3f5f8; padding: 24px; }
+.login-card { width: min(100%, 400px); display: grid; gap: 14px; padding: 32px; background: white; color: #172033; border-radius: 16px; box-shadow: 0 8px 36px #18253b12; }
+.login-card h1, .login-card p { margin: 0; }
+.login-card input { padding: 12px; border: 1px solid #b7c1ce; border-radius: 8px; font: inherit; }
+.login-card button { padding: 12px; background: #245dd8; color: white; border: 0; border-radius: 8px; cursor: pointer; font: inherit; }
+.login-card button:disabled { opacity: .65; cursor: wait; }
+.login-card [role=alert] { color: #b42318; }

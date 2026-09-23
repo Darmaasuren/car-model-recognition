@@ -25,3 +25,11 @@ export function resolveMediaUrl(path: string): string {
 
   return `${backendOrigin}${normalizePath(path)}`;
 }
+
+export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const response = await fetch(url, { ...options, credentials: 'include' });
+  if (response.status === 401 && !url.endsWith('/auth/login')) {
+    window.dispatchEvent(new Event('auth-expired'));
+  }
+  return response;
+}
