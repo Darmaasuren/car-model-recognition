@@ -48,20 +48,20 @@
 
 .service-page__card {
   display: grid;
-  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
   align-items: start;
-  gap: 18px;
-  padding: 16px;
+  gap: 14px;
+  padding: 12px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
 }
-.service-page__card + .service-page__card { margin-top: 14px; }
+.service-page__card + .service-page__card { margin-top: 10px; }
 .service-page__card img,
 .service-page__missing-image {
   width: 100%;
-  height: 240px;
+  height: 200px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-background);
@@ -77,15 +77,15 @@
 .service-page__image-button img { display: block; box-sizing: border-box; }
 .service-page__missing-image { display: grid; place-items: center; color: var(--color-muted); }
 .service-page__details { min-width: 0; }
-.service-page__card-heading { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.service-page__card-heading { flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
 .service-page__card-heading h2 { margin: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .service-page__card-heading h2 span { margin-right: 6px; color: var(--color-muted); font-size: 12px; }
-.service-page__meta { margin: 4px 0; font-size: 12px; overflow-wrap: anywhere; }
+.service-page__meta { margin: 2px 0; font-size: 12px; overflow-wrap: anywhere; }
 .service-page__meta span { color: var(--color-muted); margin-right: 4px; }
-.service-page__table-scroll { max-width: 100%; overflow-x: auto; margin-top: 12px; }
+.service-page__table-scroll { max-width: 100%; overflow-x: auto; margin-top: 8px; }
 .service-page__card table { width: 100%; min-width: 540px; border-collapse: collapse; text-align: left; font-size: 12px; }
 .service-page__card th,
-.service-page__card td { padding: 9px 10px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.service-page__card td { padding: 6px 8px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
 .service-page__card thead th { background: #fafbfc; color: var(--color-muted); font-size: 11px; font-weight: 600; }
 .service-page__card tbody th { font-weight: 600; white-space: nowrap; }
 .service-page__card tbody tr:last-child > * { border-bottom: 0; }
@@ -110,12 +110,12 @@
 @media (max-width: 1000px) {
   .service-page__card { grid-template-columns: minmax(0, 1fr); }
   .service-page__card img,
-  .service-page__missing-image { max-width: 360px; height: 220px; }
+  .service-page__missing-image { max-width: 280px; height: 200px; }
 }
 @media (max-width: 640px) {
   .service-page { padding: 14px; }
   .service-page__header { align-items: flex-start; flex-direction: column; }
-  .service-page__card { padding: 14px; gap: 14px; }
+  .service-page__card { padding: 12px; gap: 10px; }
 }
 
 .service-page__pagination {
@@ -184,3 +184,6 @@
   .service-page__pagination { gap: 8px; padding: 12px; }
   .service-page__page-size { margin-left: 0; }
 }
+
+.service-page__card .seatbelt-details { margin-top: 8px; padding-top: 8px; }
+.service-page__card .seatbelt-details h3 { margin-bottom: 4px; }

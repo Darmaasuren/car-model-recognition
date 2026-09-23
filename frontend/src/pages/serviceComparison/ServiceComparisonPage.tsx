@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { resolveMediaUrl } from "../../api/client";
-import { compareBatch, getComparisons } from "../../api/serviceComparison";
-import type { ServiceComparison } from "../../api/serviceComparison";
+import { getWorkerStatus, getComparisons } from "../../api/serviceComparison";
+import type { ServiceComparison, ServiceWorkerStatus } from "../../api/serviceComparison";
 import "./ServiceComparisonPage.css";
 import { SeatbeltDetails } from "../../components/result/SeatbeltDetails";
 import { ImageViewer } from "../../components/mediaPreview/ImageViewer";
@@ -23,6 +23,16 @@ const STATUS: Record<string, string> = {
   AMBIGUOUS_VEHICLE: "Нэгээс олон машин илэрсэн",
 };
 
+function formatEventDate(value: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).format(date);
+}
+
 function predictionText(value?: { label: string; confidence: number } | null) {
   return value ? `${value.label} (${(value.confidence * 100).toFixed(1)}%)` : "—";
 }
@@ -41,7 +51,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export function ServiceComparisonPage() {
   const [results, setResults] = useState<ServiceComparison[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [worker, setWorker] = useState<ServiceWorkerStatus | null>(null);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<{ src: string; alt: string } | null>(null);
 
@@ -50,30 +60,39 @@ export function ServiceComparisonPage() {
   const [pageInput, setPageInput] = useState("1");
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
     setLoading(true);
-    setResults([]);
-    getComparisons(offset, controller.signal, pageSize).then((history) => {
-      if (controller.signal.aborted) return;
-      const lastOffset = Math.max(0, Math.ceil(history.total / pageSize) - 1) * pageSize;
-      if (offset > lastOffset) {
-        setOffset(lastOffset);
-        return;
+    async function refresh() {
+      try {
+        if (document.hidden) return;
+        const [history, status] = await Promise.all([
+          getComparisons(offset, controller.signal, pageSize),
+          getWorkerStatus(controller.signal),
+        ]);
+        if (controller.signal.aborted) return;
+        const lastOffset = Math.max(0, Math.ceil(history.total / pageSize) - 1) * pageSize;
+        if (offset > lastOffset) { setOffset(lastOffset); return; }
+        setResults(history.items);
+        setTotal(history.total);
+        setWorker(status);
+        setError("");
+      } catch (caught) {
+        if (!controller.signal.aborted) {
+          setError(caught instanceof Error ? caught.message : "Мэдээлэл уншиж чадсангүй.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          timer = setTimeout(() => void refresh(), 5000);
+        }
       }
-      setResults(history.items);
-      setTotal(history.total);
-    }).catch((caught: unknown) => {
-      if (!controller.signal.aborted) {
-        setError(caught instanceof Error ? caught.message : "Мэдээлэл уншиж чадсангүй.");
-      }
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
-    return () => controller.abort();
-  }, [offset, revision, pageSize]);
+    }
+    void refresh();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [offset, pageSize]);
 
   const currentPage = Math.floor(offset / pageSize) + 1;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -95,30 +114,22 @@ export function ServiceComparisonPage() {
     setOffset(nextOffset);
   }
 
-  async function runComparison() {
-    setBusy(true);
-    setError("");
-    try {
-      const batch = await compareBatch();
-      const failures = batch.items.filter((item) => item.error).length;
-      if (failures) setError(`${failures} бичлэгийг боловсруулахад алдаа гарлаа.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Харьцуулалт амжилтгүй боллоо.");
-    } finally {
-      setBusy(false);
-      setOffset(0);
-      setRevision((value) => value + 1);
-    }
-  }
-
   return (
     <main className="service-page">
       <header className="service-page__header">
         <div><h1>Service-ийн машин харьцуулах</h1><p>Service-ийн мэдээллийг танилтын үр дүнтэй харьцуулна.</p></div>
-        <button type="button" disabled={busy || loading} onClick={() => void runComparison()}>
-          {busy ? "20 машин боловсруулж байна…" : "20 машин шалгах"}
-        </button>
+        <span className="service-page__status service-page__status--neutral">Автомат · 20 минут / 20 бичлэг</span>
       </header>
+      <p className="service-page__count" role="status">
+        {worker ? ({ waiting: "Дараагийн ажлыг хүлээж байна", fetching: "Service-ээс мэдээлэл авч байна",
+          processing: "Зураг боловсруулж байна", blocked: "Автомат ажиллагаа зогссон",
+          cooldown: "Дахин оролдох хугацааг хүлээж байна", not_started: "Worker асаагүй байна",
+          unresponsive: "Worker-ийн төлөв шинэчлэгдээгүй байна", starting: "Worker эхэлж байна",
+        }[worker.status] ?? worker.status) : "Worker-ийн төлөвийг уншиж байна…"}
+        {worker && ` · Хүлээгдэж буй: ${worker.counts.pending ?? 0} · Алдаатай: ${worker.counts.failed ?? 0}`}
+        {worker?.nextRequestAt && ` · Дараагийн хүсэлт: ${new Date(worker.nextRequestAt).toLocaleString()}`}
+      </p>
+      {worker?.error && <p role="alert" className="service-page__error">{worker.error}</p>}
       {error && <p role="alert" className="service-page__error">{error}</p>}
       {loading && <p role="status">Хадгалсан мэдээллийг уншиж байна…</p>}
       {!loading && !error && results.length === 0 && <p>Хадгалсан харьцуулалт байхгүй байна.</p>}
@@ -136,7 +147,7 @@ export function ServiceComparisonPage() {
           </div>
           <p className="service-page__meta"><span>Record ID:</span> {result.recordId}</p>
           {result.error ? <p className="service-page__error" role="alert">{result.error}</p> : <>
-          <p className="service-page__meta"><span>Огноо:</span> {result.eventDate || "—"}</p>
+          <p className="service-page__meta"><span>Үйл явдлын огноо (УБ):</span> <time dateTime={result.eventDate || undefined} title={result.eventDate}>{formatEventDate(result.eventDate)}</time></p>
           <div className="service-page__table-scroll" tabIndex={0} role="region" aria-label="Танилтын харьцуулалт">
           <table>
             <thead><tr><th scope="col">Мэдээлэл</th><th scope="col">Service</th><th scope="col">Танилт</th><th scope="col">Харьцуулалт</th></tr></thead>
@@ -155,12 +166,12 @@ export function ServiceComparisonPage() {
       <nav className="service-page__pagination" aria-label="Харьцуулалтын хуудас">
         <span className="service-page__total">Нийт : {total}</span>
         <button type="button" className="service-page__page-arrow" aria-label="Өмнөх хуудас"
-          disabled={busy || loading || currentPage === 1}
+          disabled={loading || currentPage === 1}
           onClick={() => changePage(offset - pageSize)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 7-5 5 5 5" /></svg>
         </button>
         <input className="service-page__page-input" aria-label="Хуудасны дугаар"
-          type="text" inputMode="numeric" value={pageInput} disabled={busy || loading}
+          type="text" inputMode="numeric" value={pageInput} disabled={loading}
           onChange={(event) => setPageInput(event.target.value)} onBlur={submitPage}
           onKeyDown={(event) => {
             if (event.key === "Enter") { event.preventDefault(); submitPage(); }
@@ -168,12 +179,12 @@ export function ServiceComparisonPage() {
           }} />
         <span className="service-page__page-count">/ <span>{pageCount}</span></span>
         <button type="button" className="service-page__page-arrow" aria-label="Дараагийн хуудас"
-          disabled={busy || loading || currentPage >= pageCount}
+          disabled={loading || currentPage >= pageCount}
           onClick={() => changePage(offset + pageSize)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5" /></svg>
         </button>
         <span className="service-page__page-size">
-          <select aria-label="Нэг хуудсанд харуулах тоо" value={pageSize} disabled={busy || loading}
+          <select aria-label="Нэг хуудсанд харуулах тоо" value={pageSize} disabled={loading}
             onChange={(event) => {
               setPageSize(Number(event.target.value));
               setPageInput("1");

@@ -1,7 +1,7 @@
 """Database configuration shared by the API and the standalone init command."""
 import os
 
-from sqlalchemy import URL, create_engine
+from sqlalchemy import URL, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
@@ -23,3 +23,11 @@ def database_url():
 def make_database():
     engine = create_engine(database_url(), pool_pre_ping=True)
     return engine, sessionmaker(engine, expire_on_commit=False)
+
+
+def create_tables(engine):
+    """Serialize startup DDL across the API and worker containers."""
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(731904823)"))
+        Base.metadata.create_all(connection)

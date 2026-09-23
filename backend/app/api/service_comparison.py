@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, HTTPException, Request, Query
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.exc import SQLAlchemyError
@@ -9,6 +10,8 @@ router = APIRouter(prefix="/service", tags=["service"])
 
 @router.post("/compare-next")
 async def compare_next_record(request: Request):
+    if os.getenv("SERVICE_WORKER_ENABLED", "false").lower() == "true":
+        raise HTTPException(409, "Автомат worker ажиллаж байгаа тул гараар хүсэлт явуулахгүй.")
     pipeline = request.app.state.pipeline
     if pipeline is None:
         raise HTTPException(503, request.app.state.model_error or "Model бэлэн биш байна.")
@@ -22,6 +25,8 @@ async def compare_next_record(request: Request):
 
 @router.post("/compare-batch")
 async def compare_batch_records(request: Request):
+    if os.getenv("SERVICE_WORKER_ENABLED", "false").lower() == "true":
+        raise HTTPException(409, "Автомат worker ажиллаж байгаа тул гараар хүсэлт явуулахгүй.")
     pipeline = request.app.state.pipeline
     if pipeline is None:
         raise HTTPException(503, request.app.state.model_error or "Model бэлэн биш байна.")
@@ -43,3 +48,12 @@ async def list_comparisons(request: Request, offset: int = Query(0, ge=0),
             RecognitionStore(request.app.state.db_sessions).list_results, offset, limit)
     except SQLAlchemyError as error:
         raise HTTPException(503, "Хадгалсан мэдээллийг уншиж чадсангүй.") from error
+
+
+@router.get("/worker-status")
+async def worker_status(request: Request):
+    from app.services.service_worker_status import read_status
+    try:
+        return await run_in_threadpool(read_status, request.app.state.db_sessions)
+    except SQLAlchemyError as error:
+        raise HTTPException(503, "Worker-ийн төлөвийг уншиж чадсангүй.") from error

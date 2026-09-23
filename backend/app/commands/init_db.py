@@ -1,16 +1,17 @@
 from sqlalchemy import select
 
-from app.core.database import Base, make_database
+from app.core.database import create_tables, make_database
 from app.models.user_model import User
 import app.models.service_token  # Register the service token table.
 import app.models.vehicle_recognition
+import app.models.service_sync
 from app.core.passwords import hasher
 
 
 def main():
     engine, factory = make_database()
     try:
-        Base.metadata.create_all(engine)
+        create_tables(engine)
         username = input('Admin username: ').strip().lower()
         if not username:
             raise ValueError('Username is required.')

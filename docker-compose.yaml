@@ -5,6 +5,8 @@ services:
     container_name: vehicle-recognition-backend
     env_file:
       - .env
+    environment:
+      SERVICE_WORKER_ENABLED: "true"
     ports:
       - "8008:8000"
     extra_hosts:
@@ -16,7 +18,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  worker:
+    container_name: vehicle-recognition-worker
+    build: ./backend
+    image: vehicle-recognition-backend:v1
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend/runtime:/app/runtime
+    depends_on:
+      backend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 90s
+
   postgres:
+    container_name: vehicle-recognition-postgres
     image: postgres:17
     ports:
       - "127.0.0.1:5433:5432"

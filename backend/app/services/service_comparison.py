@@ -2,6 +2,8 @@
 
 import json
 import os
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlsplit
 from uuid import uuid4
 
@@ -16,21 +18,34 @@ from app.services.recognition_store import RecognitionStore
 
 
 COLOR_ALIASES = {
-    "цагаан": "white", "сувдан цагаан": "white", "хар": "black", "хөх": "blue",
-    "цэнхэр": "blue", "бор": "brown", "саарал": "gray",
+    "цагаан": "white", "сувдан цагаан": "white", "хар": "black", "хар саарал": "black", "хөх": "blue",
+    "цэнхэр": "blue", "цайвар цэнхэр": "blue", "бор": "brown", "саарал": "gray",
     "улаан": "red", "мөнгөлөг саарал": "gray", "мөнгөлөг": "gray",
 }
 
 
 class ServiceComparisonError(Exception):
-    pass
+    def __init__(self, message, *, retry_after=0, blocked=False):
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.blocked = blocked
+
+
+def retry_after_seconds(value):
+    try:
+        return max(0, int(value))
+    except (ValueError, TypeError):
+        try:
+            return max(0, (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, OverflowError):
+            return 0
 
 
 def normalize(value):
     return " ".join(str(value or "").casefold().split())
 
 
-def fetch_records(limit=20, token_provider=None):
+def fetch_records(limit=20, token_provider=None, overrides=None, refresh_on_401=True, omit_date_filters=False):
     url = os.getenv("SERVICE_URL", "").strip()
     token = os.getenv("SERVICE_TOKEN", "").strip().removeprefix("Bearer ").strip()
     method = os.getenv("SERVICE_METHOD", "POST").strip().upper()
@@ -41,6 +56,16 @@ def fetch_records(limit=20, token_provider=None):
         body = json.loads(os.getenv("SERVICE_BODY_JSON", "{}"))
     except ValueError as error:
         raise ServiceComparisonError("SERVICE_PARAMS_JSON эсвэл SERVICE_BODY_JSON JSON формат буруу байна.") from error
+    if not isinstance(params, dict) or not isinstance(body, dict):
+        raise ServiceComparisonError("Service request JSON объект байх ёстой.", blocked=True)
+    if omit_date_filters:
+        date_fields = {"startDate", "endDate", os.getenv("SERVICE_DATE_START_FIELD", "startDate"),
+                       os.getenv("SERVICE_DATE_END_FIELD", "endDate")}
+        for field in date_fields:
+            params.pop(field, None)
+            body.pop(field, None)
+    if overrides is not None:
+        (body if method == "POST" else params).update(overrides)
     try:
         if token_provider is not None:
             token = token_provider.get_token()
@@ -55,9 +80,19 @@ def fetch_records(limit=20, token_provider=None):
                     allow_redirects=False,
                 )
                 with response:
-                    if response.status_code == 401 and token_provider is not None and attempt == 0:
+                    if response.status_code == 401 and token_provider is not None and attempt == 0 and refresh_on_401:
                         token = token_provider.get_token(rejected_token=token)
                         continue
+                    if response.status_code == 401 and token_provider is not None and not refresh_on_401:
+                        # Refresh credentials now; retry the list only on the next scheduled cycle.
+                        token_provider.get_token(rejected_token=token)
+                        raise ServiceComparisonError("Service token шинэчилсэн; дараагийн мөчлөгт дахин оролдоно.", retry_after=300)
+                    if response.status_code in {401, 403, 429, 503}:
+                        raise ServiceComparisonError(
+                            f"Service HTTP {response.status_code} алдаа буцаалаа.",
+                            retry_after=retry_after_seconds(response.headers.get("Retry-After")),
+                            blocked=response.status_code in {401, 403},
+                        )
                     response.raise_for_status()
                     if response.is_redirect:
                         raise ServiceComparisonError("Service хаяг өөр хаяг руу чиглүүлж байна.")
@@ -73,6 +108,8 @@ def fetch_records(limit=20, token_provider=None):
     items = payload.get("items") if isinstance(payload, dict) else None
     if not isinstance(items, list):
         raise ServiceComparisonError("Service-ийн items жагсаалт буруу байна.")
+    if overrides is not None and len(items) > limit:
+        raise ServiceComparisonError("Service limit-ээс олон бичлэг буцаалаа.", blocked=True)
     return items[:limit]
 
 
@@ -98,6 +135,12 @@ def download_frame(url):
     try:
         # The service token is never sent to the image host.
         with requests.get(url, stream=True, timeout=(10, 30), allow_redirects=False) as response:
+            if response.status_code in {403, 429, 503}:
+                raise ServiceComparisonError(
+                    f"Зураг татах HTTP {response.status_code} алдаа.",
+                    blocked=response.status_code == 403,
+                    retry_after=max(300, retry_after_seconds(response.headers.get("Retry-After"))),
+                )
             response.raise_for_status()
             if response.is_redirect:
                 raise ServiceComparisonError("Зургийн хаяг өөр сервер рүү чиглүүлж байна.")

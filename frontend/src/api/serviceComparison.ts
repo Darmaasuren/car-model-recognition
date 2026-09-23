@@ -50,3 +50,18 @@ export async function getComparisons(offset = 0, signal?: AbortSignal, limit = 2
   }
   return response.json() as Promise<ServiceComparisonHistory>;
 }
+
+
+export interface ServiceWorkerStatus {
+  status: string;
+  counts: Record<string, number>;
+  error?: string | null;
+  nextRequestAt?: string | null;
+  lastSuccessAt?: string | null;
+}
+
+export async function getWorkerStatus(signal?: AbortSignal): Promise<ServiceWorkerStatus> {
+  const response = await apiFetch(buildApiUrl("/service/worker-status"), { signal });
+  if (!response.ok) throw new Error("Автомат ажиллагааны төлөвийг уншиж чадсангүй.");
+  return response.json() as Promise<ServiceWorkerStatus>;
+}

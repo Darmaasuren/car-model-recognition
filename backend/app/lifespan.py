@@ -4,8 +4,9 @@ from fastapi import FastAPI
 
 import app.models.user_model  # Register database tables before create_all.
 import app.models.vehicle_recognition
+import app.models.service_sync
 from app.core.config import settings
-from app.core.database import Base, make_database
+from app.core.database import create_tables, make_database
 from app.services.service_auth import ServiceTokenProvider
 from app.services.classifier import VehicleClassifier
 from app.services.detector import VehicleDetector
@@ -20,7 +21,7 @@ async def lifespan(app: FastAPI):
     settings.runtime_dir.mkdir(parents=True, exist_ok=True)
     engine, app.state.db_sessions = make_database()
     try:
-        Base.metadata.create_all(engine)
+        create_tables(engine)
     except Exception:
         engine.dispose()
         raise
