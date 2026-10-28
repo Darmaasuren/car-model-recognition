@@ -14,10 +14,10 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.database import Base
-from app.models.service_token import ServiceToken
-from app.services.service_auth import ServiceAuthError, ServiceTokenProvider
+from app.models.source_token import ServiceToken
+from app.services.comparison.auth import ServiceAuthError, ServiceTokenProvider
 with patch.dict(os.environ, {"API_PREFIX": "/api", "API_KEY": "test", "CORS_ORIGINS": "http://localhost:5173"}):
-    from app.services.service_comparison import ServiceComparisonError, fetch_records
+    from app.services.comparison.compare import ServiceComparisonError, fetch_records
 
 
 def jwt(exp):
@@ -58,7 +58,7 @@ class ServiceTokenTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_persists_and_reuses_after_provider_restart(self):
-        with patch("app.services.service_auth.requests.post", return_value=response(
+        with patch("app.services.comparison.auth.requests.post", return_value=response(
                 {"success": True, "token": self.token})) as login:
             self.assertEqual(self.provider.get_token(), self.token)
             self.assertEqual(ServiceTokenProvider(self.factory).get_token(), self.token)
@@ -68,7 +68,7 @@ class ServiceTokenTests(unittest.TestCase):
         })
 
     def test_refreshes_near_expiry_and_rejected_token(self):
-        with patch("app.services.service_auth.requests.post", return_value=response(
+        with patch("app.services.comparison.auth.requests.post", return_value=response(
                 {"success": True, "token": self.token})) as login:
             self.provider.get_token()
             with self.factory.begin() as db:
@@ -78,7 +78,7 @@ class ServiceTokenTests(unittest.TestCase):
             self.assertEqual(login.call_count, 3)
 
     def test_concurrent_calls_login_only_once(self):
-        with patch("app.services.service_auth.requests.post", return_value=response(
+        with patch("app.services.comparison.auth.requests.post", return_value=response(
                 {"success": True, "token": self.token})) as login:
             with ThreadPoolExecutor(max_workers=4) as pool:
                 tokens = list(pool.map(lambda _: self.provider.get_token(), range(8)))
@@ -88,7 +88,7 @@ class ServiceTokenTests(unittest.TestCase):
     def test_failed_login_does_not_persist_or_expose_secrets(self):
         for body in ({"success": False, "token": "secret"}, {"success": True},
                      {"success": True, "token": "malformed"}):
-            with patch("app.services.service_auth.requests.post", return_value=response(body)):
+            with patch("app.services.comparison.auth.requests.post", return_value=response(body)):
                 with self.assertRaises(ServiceAuthError) as caught:
                     self.provider.get_token()
                 self.assertNotIn("test-hash", str(caught.exception))
@@ -99,7 +99,7 @@ class ServiceTokenTests(unittest.TestCase):
 
     def test_expired_token_is_not_saved(self):
         expired = jwt((datetime.now(timezone.utc) - timedelta(seconds=1)).timestamp())
-        with patch("app.services.service_auth.requests.post", return_value=response(
+        with patch("app.services.comparison.auth.requests.post", return_value=response(
                 {"success": True, "token": expired})):
             with self.assertRaises(ServiceAuthError):
                 self.provider.get_token()
@@ -107,7 +107,7 @@ class ServiceTokenTests(unittest.TestCase):
     def test_401_refreshes_and_retries_once(self):
         provider = MagicMock()
         provider.get_token.side_effect = ["old", "new"]
-        with patch("app.services.service_comparison.requests.Session") as sessions:
+        with patch("app.services.comparison.source.requests.Session") as sessions:
             request = sessions.return_value.__enter__.return_value.request
             request.side_effect = [response({}, 401), response({"items": [{"_id": "one"}]})]
             self.assertEqual(fetch_records(token_provider=provider), [{"_id": "one"}])
@@ -121,7 +121,7 @@ class ServiceTokenTests(unittest.TestCase):
         denied.raise_for_status.side_effect = requests.HTTPError(response=denied)
         provider = MagicMock()
         provider.get_token.side_effect = ["old", "new"]
-        with patch("app.services.service_comparison.requests.Session") as sessions:
+        with patch("app.services.comparison.source.requests.Session") as sessions:
             request = sessions.return_value.__enter__.return_value.request
             request.side_effect = [response({}, 401), denied]
             with self.assertRaises(ServiceComparisonError):

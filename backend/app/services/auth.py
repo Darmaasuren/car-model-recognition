@@ -1,3 +1,7 @@
+import base64
+import binascii
+import logging
+from app.core.config import get_admin_settings
 from collections import OrderedDict
 from datetime import timedelta
 from hashlib import sha256
@@ -6,9 +10,9 @@ from threading import Lock
 from time import monotonic
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 
-from app.models.user_model import Session, User, utcnow
+from app.models.user import Session, User, utcnow
 from app.core.passwords import DUMMY_HASH, hasher, verify_password
 
 
@@ -26,6 +30,33 @@ def current_user(factory, token):
                 Session.expires_at > utcnow(),
             )
         )
+
+
+BASIC_CHALLENGE = {'WWW-Authenticate': 'Basic realm="login", charset="UTF-8"'}
+
+
+def decode_basic(header):
+    scheme, _, encoded = (header or '').partition(' ')
+    if scheme.lower() != 'basic' or not encoded:
+        raise HTTPException(401, 'Basic Auth шаардлагатай.', headers=BASIC_CHALLENGE)
+    try:
+        username, separator, password = base64.b64decode(encoded, validate=True).decode('utf-8').partition(':')
+    except (ValueError, binascii.Error, UnicodeError):
+        raise HTTPException(401, 'Basic Auth бүтэц буруу байна.', headers=BASIC_CHALLENGE) from None
+    if not separator or not username.strip() or not password:
+        raise HTTPException(401, 'Username болон password шаардлагатай.', headers=BASIC_CHALLENGE)
+    return username.strip().lower(), password
+
+
+def basic_user(factory, header):
+    """Authenticate a single request without creating or reading a session."""
+    username, password = decode_basic(header)
+    with factory() as db:
+        user = db.scalar(select(User).where(User.username == username))
+        valid = verify_password(user.password_hash if user else DUMMY_HASH, password)
+        if not valid or not user:
+            raise HTTPException(401, 'Username эсвэл password буруу байна.', headers=BASIC_CHALLENGE)
+        return user
 
 
 def login(factory, username, password, lifetime, old_token=None):
@@ -78,3 +109,24 @@ class LoginLimiter:
         """A successful login must not consume the failure budget."""
         with self.lock:
             self.entries.pop(key, None)
+
+
+log = logging.getLogger(__name__)
+
+
+def ensure_initial_admin(factory):
+    config = get_admin_settings()
+    username, password = config.username, config.password
+    if not username and not password:
+        return False
+    if not username or not password.strip():
+        raise ValueError("ADMIN_USERNAME болон ADMIN_PASSWORD хоёуланг тохируулна уу.")
+    with factory() as db, db.begin():
+        if db.get_bind().dialect.name == "postgresql":
+            db.execute(text("SELECT pg_advisory_xact_lock(731904824)"))
+        if db.scalar(select(User).where(User.username == username)) is not None:
+            log.info("Configured admin username already exists; account unchanged.")
+            return False
+        db.add(User(username=username, password_hash=hasher.hash(password), role="admin"))
+    log.info("Initial admin account created.")
+    return True

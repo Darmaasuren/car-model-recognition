@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   connectVideoSessionEvents,
   createVideoSession,
@@ -15,6 +15,8 @@ import "./FileRecognitionPage.css";
 const MAX_VISIBLE_RESULTS = 50;
 
 export function FileRecognitionPage() {
+  const requestVersion = useRef(0);
+  useEffect(() => () => { requestVersion.current += 1; }, []);
   const [selectedFile, setSelectedFile] =
     useState<File | null>(null);
   const [results, setResults] =
@@ -77,11 +79,13 @@ export function FileRecognitionPage() {
 
     return () => {
       disconnect();
-      void stopVideoSession(videoSessionId);
+      void stopVideoSession(videoSessionId).catch(() => {});
     };
   }, [videoSessionId]);
 
   function handleFileChange(file: File | null) {
+    requestVersion.current += 1;
+    setIsLoading(false);
     setVideoSessionId("");
     setSelectedFile(file);
     setResults([]);
@@ -89,6 +93,8 @@ export function FileRecognitionPage() {
   }
 
   function handleClear() {
+    requestVersion.current += 1;
+    setIsLoading(false);
     setVideoSessionId("");
     setSelectedFile(null);
     setResults([]);
@@ -100,6 +106,7 @@ export function FileRecognitionPage() {
       return;
     }
 
+    const version = ++requestVersion.current;
     try {
       setIsLoading(true);
       setError("");
@@ -107,14 +114,20 @@ export function FileRecognitionPage() {
 
       if (selectedFile.type.startsWith("video/")) {
         const response = await createVideoSession(selectedFile);
+        if (version !== requestVersion.current) {
+          void stopVideoSession(response.sessionId).catch(() => {});
+          return;
+        }
         setVideoSessionId(response.sessionId);
         return;
       }
 
       const response = await recognizeFile(selectedFile);
+      if (version !== requestVersion.current) return;
       setResults(response.results);
       setIsLoading(false);
     } catch (caughtError) {
+      if (version !== requestVersion.current) return;
       setError(
         caughtError instanceof Error
           ? caughtError.message

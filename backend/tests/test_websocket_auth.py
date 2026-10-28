@@ -42,8 +42,8 @@ class WebSocketAuthTests(unittest.IsolatedAsyncioTestCase):
         return messages
 
     async def test_missing_camera_does_not_report_expired_session(self):
-        self.app.state.live_manager = SimpleNamespace(
-            events_after=Mock(side_effect=KeyError('Camera not configured')),
+        self.app.state.recognition = SimpleNamespace(
+            tracking_events=Mock(side_effect=KeyError('Camera not configured')),
         )
         with patch('app.middleware.auth.run_in_threadpool', new=AsyncMock(return_value=object())):
             messages = await self.connect(settings.api_prefix + '/live/cameras/camera-1/events')

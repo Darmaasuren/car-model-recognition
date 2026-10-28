@@ -10,6 +10,7 @@ export interface Prediction {
 }
 
 export interface LiveRecognitionResult {
+  seatbelt?: SeatbeltResult | null;
   eventId: string;
   trackId?: number;
   detectedAt: string;
@@ -19,7 +20,6 @@ export interface LiveRecognitionResult {
   color?: Prediction;
   vehicleType?: Prediction;
   view?: Prediction;
-  seatbelt?: SeatbeltResult | null;
 }
 
 export interface RecognitionEvent {
@@ -29,12 +29,20 @@ export interface RecognitionEvent {
 }
 
 export interface SeatbeltResult {
-  status: "completed" | "unknown" | "skipped" | "error";
-  reason: string;
-  detections: {
-    className: string;
+  schemaVersion: number;
+  status: string;
+  detections: Array<{
+    label: string;
     confidence: number;
-    bbox: [number, number, number, number];
-  }[];
-  image?: { width: number; height: number } | null;
+    role: "driver" | "passenger" | "unknown" | null;
+    bbox: number[];
+    windshieldIndex: number;
+    cropUrl?: string | null;
+    cropError?: string;
+    personConfidence?: number | null;
+    roleConfidence?: number | null;
+    phoneUsage?: boolean | null;
+    phoneConfidence?: number | null;
+  }>;
+  error?: { code: string; message: string } | null;
 }

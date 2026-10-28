@@ -1,0 +1,68 @@
+services:
+  backend:
+    build: .
+    image: view.odt.mn/darmaa/vehicle-backend:v1
+    container_name: vehicle-recognition-backend
+    env_file:
+      - ../.env
+    ports:
+      - "8008:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./runtime:/app/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    
+  worker:
+    build: .
+    image: view.odt.mn/darmaa/vehicle-backend:v1
+    container_name: vehicle-recognition-worker
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - ../.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./runtime:/app/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: view.odt.mn/darmaa/postgres:17
+    container_name: postgres
+    env_file:
+      - ../.env
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # vehicle-bbox-api:
+  #   image: view.odt.mn/darmaa/vehicle-bbox-api:v1
+  #   container_name: vehicle-bbox-api
+  #   command: ["uvicorn", "recognition_service.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+  #   environment:
+  #     API_KEY: "b009d80dc85ac93de8a673c1aa8566a3"
+  #     API_PREFIX: /api
+  #     MODEL_DEVICE: auto
+  #     MODEL_PATH: /app/checkpoints/classifier.pt
+  #     DETECTOR_MODEL_PATH: /app/checkpoints/detector.pt
+  #   ports:
+  #     - "8009:8000"
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:

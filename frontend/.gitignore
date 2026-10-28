@@ -1,0 +1,19 @@
+# Local environment configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated files
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Logs and local editor files
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

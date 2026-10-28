@@ -1,5 +1,8 @@
 import base64
 import binascii
+from io import BytesIO
+from PIL import Image
+from app.core.config import settings
 from pathlib import Path
 from uuid import uuid4
 
@@ -21,6 +24,8 @@ class MediaService:
     ):
         self.upload_dir = upload_dir
         self.crop_dir = crop_dir
+        self.person_dir = crop_dir.parent / "persons"
+        self.windshield_dir = crop_dir.parent / "windshields"
         self.output_dir = output_dir
 
         self.upload_dir.mkdir(
@@ -83,6 +88,12 @@ class MediaService:
         return path
 
     def read_image(self, path: Path):
+        try:
+            with Image.open(path) as image:
+                if image.width * image.height > settings.max_image_pixels:
+                    raise MediaTooLargeError("Зургийн нягтаршил хэт өндөр байна.")
+        except (OSError, Image.DecompressionBombError) as error:
+            raise ValueError("Зургийг уншиж чадсангүй.") from error
         frame = cv2.imread(str(path))
 
         if frame is None:
@@ -141,6 +152,13 @@ class MediaService:
             raise MediaTooLargeError(
                 "Зургийн хэмжээ хэтэрсэн."
             )
+
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                if image.width * image.height > max_pixels:
+                    raise MediaTooLargeError("Зургийн нягтаршил хэт өндөр байна.")
+        except (OSError, Image.DecompressionBombError) as error:
+            raise ValueError("Зургийг уншиж чадсангүй.") from error
 
         image_array = np.frombuffer(
             image_bytes,
@@ -206,7 +224,21 @@ class MediaService:
                 "Crop зураг хадгалж чадсангүй."
             )
 
-        return f"/media/crops/{filename}"
+        return f"/media/crop/{filename}"
+
+    def save_windshield_crop(self, crop, event_id: str, index: int) -> str:
+        self.windshield_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{event_id}_windshield_{index}.jpg"
+        if not cv2.imwrite(str(self.windshield_dir / filename), crop):
+            raise RuntimeError("Windshield crop зураг хадгалж чадсангүй.")
+        return f"/media/windshields/{filename}"
+
+    def save_person_crop(self, crop, event_id: str, index: int) -> str:
+        self.person_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{event_id}_person_{index}.jpg"
+        if not cv2.imwrite(str(self.person_dir / filename), crop):
+            raise RuntimeError("Person crop зураг хадгалж чадсангүй.")
+        return f"/media/persons/{filename}"
 
     def remove_file(self, path: Path) -> None:
         path.unlink(missing_ok=True)

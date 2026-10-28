@@ -1,22 +1,16 @@
 from fastapi import APIRouter, Request
-
-from app.schemas.common import HealthResponse
-
+from fastapi.responses import JSONResponse
+from app.services.recognition.client import RecognitionServiceError
 
 router = APIRouter()
 
 
-@router.get(
-    "/health",
-    response_model=HealthResponse,
-)
+@router.get("/health")
 def health(request: Request):
-    model_ready = (
-        request.app.state.pipeline is not None
-    )
-
-    return HealthResponse(
-        status="ok",
-        model_ready=model_ready,
-        model_error=request.app.state.model_error,
-    )
+    try:
+        ready = request.app.state.recognition_client.health().get("modelReady", False)
+    except RecognitionServiceError:
+        ready = False
+    return JSONResponse({"status": "ok" if ready else "degraded", "modelReady": ready,
+                         "modelError": None if ready else "Recognition service unavailable"},
+                        status_code=200 if ready else 503)

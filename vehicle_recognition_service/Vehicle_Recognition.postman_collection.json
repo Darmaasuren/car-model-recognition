@@ -1,0 +1,1196 @@
+{
+  "info": {
+    "name": "Vehicle Recognition Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "API-Key protected recognition service. Image: detect all vehicles; vehicle bbox: classify; plate bbox: detect + match + classify. Image limits: 15 MiB, 12 million pixels. Tracking session endpoints are documented in README.md."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8009/api/v1"
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "image_base64",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{base_url}}/health"
+      },
+      "response": [
+        {
+          "name": "Ready",
+          "originalRequest": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{base_url}}/health"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"ok\",\n  \"classifierReady\": true,\n  \"detectorReady\": true,\n  \"device\": \"cuda\"\n}"
+        },
+        {
+          "name": "Unavailable",
+          "originalRequest": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": "{{base_url}}/health"
+          },
+          "status": "Service Unavailable",
+          "code": 503,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"unavailable\",\n  \"classifierReady\": false,\n  \"detectorReady\": false,\n  \"device\": null\n}"
+        }
+      ]
+    },
+    {
+      "name": "Plate — Base64",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API-Key",
+            "value": "{{api_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/inference/plate",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+      },
+      "response": [
+        {
+          "name": "Success (illustrative predictions)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  },\n  \"result\": {\n    \"model\": {\n      \"label\": \"example-model\",\n      \"confidence\": 0.95\n    },\n    \"color\": {\n      \"label\": \"white\",\n      \"confidence\": 0.91\n    },\n    \"vehicleType\": {\n      \"label\": \"sedan\",\n      \"confidence\": 0.9\n    },\n    \"view\": {\n      \"label\": \"front\",\n      \"confidence\": 0.93\n    }\n  },\n  \"matched\": true,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"matchScore\": 0.94\n}"
+        },
+        {
+          "name": "NO_VEHICLE_DETECTED",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"matched\": false,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"reasonCode\": \"NO_VEHICLE_DETECTED\"\n}"
+        },
+        {
+          "name": "NO_MATCHING_VEHICLE",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"matched\": false,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"reasonCode\": \"NO_MATCHING_VEHICLE\"\n}"
+        },
+        {
+          "name": "CLASSIFICATION_FAILED",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"matched\": false,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"reasonCode\": \"CLASSIFICATION_FAILED\"\n}"
+        },
+        {
+          "name": "Missing API key",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"API key байхгүй байна.\"\n}"
+        },
+        {
+          "name": "Invalid image",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "Unprocessable Entity",
+          "code": 422,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"Зургийн base64 өгөгдөл буруу байна.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Plate — File Upload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API-Key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/inference/plate/upload",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "event_id",
+              "type": "text",
+              "value": "event-123"
+            },
+            {
+              "key": "plate_x1",
+              "type": "text",
+              "value": "520"
+            },
+            {
+              "key": "plate_y1",
+              "type": "text",
+              "value": "430"
+            },
+            {
+              "key": "plate_x2",
+              "type": "text",
+              "value": "640"
+            },
+            {
+              "key": "plate_y2",
+              "type": "text",
+              "value": "470"
+            }
+          ]
+        },
+        "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+      },
+      "response": [
+        {
+          "name": "Success (illustrative predictions)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "plate_x1",
+                  "type": "text",
+                  "value": "520"
+                },
+                {
+                  "key": "plate_y1",
+                  "type": "text",
+                  "value": "430"
+                },
+                {
+                  "key": "plate_x2",
+                  "type": "text",
+                  "value": "640"
+                },
+                {
+                  "key": "plate_y2",
+                  "type": "text",
+                  "value": "470"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  },\n  \"result\": {\n    \"model\": {\n      \"label\": \"example-model\",\n      \"confidence\": 0.95\n    },\n    \"color\": {\n      \"label\": \"white\",\n      \"confidence\": 0.91\n    },\n    \"vehicleType\": {\n      \"label\": \"sedan\",\n      \"confidence\": 0.9\n    },\n    \"view\": {\n      \"label\": \"front\",\n      \"confidence\": 0.93\n    }\n  },\n  \"matched\": true,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"matchScore\": 0.94\n}"
+        },
+        {
+          "name": "NO_VEHICLE_DETECTED",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "plate_x1",
+                  "type": "text",
+                  "value": "520"
+                },
+                {
+                  "key": "plate_y1",
+                  "type": "text",
+                  "value": "430"
+                },
+                {
+                  "key": "plate_x2",
+                  "type": "text",
+                  "value": "640"
+                },
+                {
+                  "key": "plate_y2",
+                  "type": "text",
+                  "value": "470"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"matched\": false,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"reasonCode\": \"NO_VEHICLE_DETECTED\"\n}"
+        },
+        {
+          "name": "NO_MATCHING_VEHICLE",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "plate_x1",
+                  "type": "text",
+                  "value": "520"
+                },
+                {
+                  "key": "plate_y1",
+                  "type": "text",
+                  "value": "430"
+                },
+                {
+                  "key": "plate_x2",
+                  "type": "text",
+                  "value": "640"
+                },
+                {
+                  "key": "plate_y2",
+                  "type": "text",
+                  "value": "470"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"matched\": false,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"reasonCode\": \"NO_MATCHING_VEHICLE\"\n}"
+        },
+        {
+          "name": "CLASSIFICATION_FAILED",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "plate_x1",
+                  "type": "text",
+                  "value": "520"
+                },
+                {
+                  "key": "plate_y1",
+                  "type": "text",
+                  "value": "430"
+                },
+                {
+                  "key": "plate_x2",
+                  "type": "text",
+                  "value": "640"
+                },
+                {
+                  "key": "plate_y2",
+                  "type": "text",
+                  "value": "470"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"matched\": false,\n  \"plateBbox\": {\n    \"x1\": 520,\n    \"y1\": 430,\n    \"x2\": 640,\n    \"y2\": 470\n  },\n  \"reasonCode\": \"CLASSIFICATION_FAILED\"\n}"
+        },
+        {
+          "name": "Missing API key",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "plate_x1",
+                  "type": "text",
+                  "value": "520"
+                },
+                {
+                  "key": "plate_y1",
+                  "type": "text",
+                  "value": "430"
+                },
+                {
+                  "key": "plate_x2",
+                  "type": "text",
+                  "value": "640"
+                },
+                {
+                  "key": "plate_y2",
+                  "type": "text",
+                  "value": "470"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"API key байхгүй байна.\"\n}"
+        },
+        {
+          "name": "Invalid image",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/plate/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "plate_x1",
+                  "type": "text",
+                  "value": "520"
+                },
+                {
+                  "key": "plate_y1",
+                  "type": "text",
+                  "value": "430"
+                },
+                {
+                  "key": "plate_x2",
+                  "type": "text",
+                  "value": "640"
+                },
+                {
+                  "key": "plate_y2",
+                  "type": "text",
+                  "value": "470"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон plate bbox илгээнэ. Харгалзах машиныг олж ангилна. Улсын дугаарын текст уншихгүй."
+          },
+          "status": "Unprocessable Entity",
+          "code": 422,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"Зураг уншигдахгүй байна.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Vehicle — Base64",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API-Key",
+            "value": "{{api_key}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/inference/vehicle",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+      },
+      "response": [
+        {
+          "name": "Success (illustrative predictions)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  },\n  \"result\": {\n    \"model\": {\n      \"label\": \"example-model\",\n      \"confidence\": 0.95\n    },\n    \"color\": {\n      \"label\": \"white\",\n      \"confidence\": 0.91\n    },\n    \"vehicleType\": {\n      \"label\": \"sedan\",\n      \"confidence\": 0.9\n    },\n    \"view\": {\n      \"label\": \"front\",\n      \"confidence\": 0.93\n    }\n  }\n}"
+        },
+        {
+          "name": "CLASSIFICATION_FAILED",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  },\n  \"reasonCode\": \"CLASSIFICATION_FAILED\"\n}"
+        },
+        {
+          "name": "Missing API key",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"API key байхгүй байна.\"\n}"
+        },
+        {
+          "name": "Invalid image",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"event-123\",\n  \"imageBase64\": \"{{image_base64}}\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "Unprocessable Entity",
+          "code": 422,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"Зургийн base64 өгөгдөл буруу байна.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Vehicle — File Upload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API-Key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/inference/vehicle/upload",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "event_id",
+              "type": "text",
+              "value": "event-123"
+            },
+            {
+              "key": "vehicle_x1",
+              "type": "text",
+              "value": "100"
+            },
+            {
+              "key": "vehicle_y1",
+              "type": "text",
+              "value": "80"
+            },
+            {
+              "key": "vehicle_x2",
+              "type": "text",
+              "value": "700"
+            },
+            {
+              "key": "vehicle_y2",
+              "type": "text",
+              "value": "500"
+            }
+          ]
+        },
+        "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+      },
+      "response": [
+        {
+          "name": "Success (illustrative predictions)",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "vehicle_x1",
+                  "type": "text",
+                  "value": "100"
+                },
+                {
+                  "key": "vehicle_y1",
+                  "type": "text",
+                  "value": "80"
+                },
+                {
+                  "key": "vehicle_x2",
+                  "type": "text",
+                  "value": "700"
+                },
+                {
+                  "key": "vehicle_y2",
+                  "type": "text",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  },\n  \"result\": {\n    \"model\": {\n      \"label\": \"example-model\",\n      \"confidence\": 0.95\n    },\n    \"color\": {\n      \"label\": \"white\",\n      \"confidence\": 0.91\n    },\n    \"vehicleType\": {\n      \"label\": \"sedan\",\n      \"confidence\": 0.9\n    },\n    \"view\": {\n      \"label\": \"front\",\n      \"confidence\": 0.93\n    }\n  }\n}"
+        },
+        {
+          "name": "CLASSIFICATION_FAILED",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "vehicle_x1",
+                  "type": "text",
+                  "value": "100"
+                },
+                {
+                  "key": "vehicle_y1",
+                  "type": "text",
+                  "value": "80"
+                },
+                {
+                  "key": "vehicle_x2",
+                  "type": "text",
+                  "value": "700"
+                },
+                {
+                  "key": "vehicle_y2",
+                  "type": "text",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"eventId\": \"event-123\",\n  \"vehicleBbox\": {\n    \"x1\": 100,\n    \"y1\": 80,\n    \"x2\": 700,\n    \"y2\": 500\n  },\n  \"reasonCode\": \"CLASSIFICATION_FAILED\"\n}"
+        },
+        {
+          "name": "Missing API key",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "vehicle_x1",
+                  "type": "text",
+                  "value": "100"
+                },
+                {
+                  "key": "vehicle_y1",
+                  "type": "text",
+                  "value": "80"
+                },
+                {
+                  "key": "vehicle_x2",
+                  "type": "text",
+                  "value": "700"
+                },
+                {
+                  "key": "vehicle_y2",
+                  "type": "text",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"API key байхгүй байна.\"\n}"
+        },
+        {
+          "name": "Invalid image",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{base_url}}/inference/vehicle/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "event_id",
+                  "type": "text",
+                  "value": "event-123"
+                },
+                {
+                  "key": "vehicle_x1",
+                  "type": "text",
+                  "value": "100"
+                },
+                {
+                  "key": "vehicle_y1",
+                  "type": "text",
+                  "value": "80"
+                },
+                {
+                  "key": "vehicle_x2",
+                  "type": "text",
+                  "value": "700"
+                },
+                {
+                  "key": "vehicle_y2",
+                  "type": "text",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "Бүтэн зураг болон машины bbox илгээнэ. Detector ажиллуулахгүй, өгсөн bbox-оор crop хийгээд ангилна."
+          },
+          "status": "Unprocessable Entity",
+          "code": 422,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"detail\": \"Зураг уншигдахгүй байна.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Recognize full image",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "API-Key",
+            "value": "{{api_key}}"
+          }
+        ],
+        "url": "{{base_url}}/inference/image",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

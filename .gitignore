@@ -3,7 +3,6 @@
 !**/.env.example
 .venv/
 .env
-train
 
 # Python
 **/__pycache__/
@@ -41,4 +40,8 @@ send.py
 docker-compose.yaml
 Vehicle Recognition.postman_collection.json
 
+postman
+train
 
+# Standalone backend deployment
+!backend/docker-compose.yaml

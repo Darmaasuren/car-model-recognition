@@ -1,21 +1,15 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-
 fastapi
 uvicorn[standard]
 python-multipart
-pydantic-settings
 opencv-python-headless
 numpy
 pillow
 pyyaml
 
-torch==2.13.0+cpu
-torchvision==0.28.0+cpu
-
-ultralytics
-lap
-
 SQLAlchemy>=2.0,<3
 psycopg[binary]>=3.2,<4
 argon2-cffi>=23.1,<26
 requests>=2.32,<3
+
+alembic>=1.13,<2
+httpx>=0.27,<1

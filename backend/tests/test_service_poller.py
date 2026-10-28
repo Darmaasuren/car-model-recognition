@@ -11,10 +11,10 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 with patch.dict(os.environ, {'API_PREFIX': '/api', 'API_KEY': 'test', 'CORS_ORIGINS': 'http://localhost:5173'}):
-    from app.models.service_sync import ServiceSync
-    from app.models.vehicle_recognition import VehicleRecognition as Row
-    from app.services.service_poller import ServicePoller, PollConfig, aware
-    from app.services.service_comparison import ServiceComparisonError, fetch_records
+    from app.models.sync_state import ServiceSync
+    from app.models.recognition import VehicleRecognition as Row
+    from app.services.comparison.poller import ServicePoller, PollConfig, aware
+    from app.services.comparison.compare import ServiceComparisonError, fetch_records
 
 
 class PollerTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class PollerTests(unittest.TestCase):
         config = PollConfig('latest-v1:test')
         self.poller = ServicePoller(self.factory, object(), None, config)
         self.poller.stop = Mock(is_set=Mock(return_value=False), wait=Mock(return_value=False))
-        self.clock = patch('app.services.service_poller.now_utc', side_effect=lambda: self.now)
+        self.clock = patch('app.services.comparison.poller.now_utc', side_effect=lambda: self.now)
         self.clock.start()
         self.poller.initialize()
 
@@ -44,7 +44,7 @@ class PollerTests(unittest.TestCase):
             return db.get(ServiceSync, 1)
 
     def test_one_page_per_twenty_minutes_and_restart_keeps_due_time(self):
-        with patch('app.services.service_poller.fetch_records', return_value=self.records()) as fetch, \
+        with patch('app.services.comparison.poller.fetch_records', return_value=self.records()) as fetch, \
              patch.object(self.poller, 'process_pending'):
             self.poller.tick()
             self.assertEqual(self.state().next_offset, 0)
@@ -61,21 +61,21 @@ class PollerTests(unittest.TestCase):
                 self.assertEqual(len(db.scalars(select(Row)).all()), 20)
 
     def test_timeout_does_not_advance_cursor(self):
-        with patch('app.services.service_poller.fetch_records', side_effect=ServiceComparisonError('Timeout')):
+        with patch('app.services.comparison.poller.fetch_records', side_effect=ServiceComparisonError('Timeout')):
             self.poller.tick()
         self.assertEqual(self.state().next_offset, 0)
         self.assertEqual(self.state().failures, 1)
         self.assertEqual(self.state().status, 'cooldown')
 
     def test_rate_limit_waits_for_retry_after(self):
-        with patch('app.services.service_poller.fetch_records', side_effect=ServiceComparisonError('429', retry_after=3600)) as fetch:
+        with patch('app.services.comparison.poller.fetch_records', side_effect=ServiceComparisonError('429', retry_after=3600)) as fetch:
             self.poller.tick()
             self.now += timedelta(seconds=1201)
             self.poller.tick()
             self.assertEqual(fetch.call_count, 1)
 
     def test_forbidden_blocks_new_requests(self):
-        with patch('app.services.service_poller.fetch_records', side_effect=ServiceComparisonError('403', blocked=True)) as fetch:
+        with patch('app.services.comparison.poller.fetch_records', side_effect=ServiceComparisonError('403', blocked=True)) as fetch:
             self.poller.tick()
             self.now += timedelta(hours=1)
             self.poller.tick()
@@ -83,14 +83,14 @@ class PollerTests(unittest.TestCase):
             self.assertEqual(self.state().status, 'blocked')
 
     def test_short_page_keeps_first_page_without_date_window(self):
-        with patch('app.services.service_poller.fetch_records', return_value=self.records(3)), \
+        with patch('app.services.comparison.poller.fetch_records', return_value=self.records(3)), \
              patch.object(self.poller, 'process_pending'):
             self.poller.tick()
         self.assertIsNone(self.state().window_start)
         self.assertIsNone(self.state().window_end)
 
     def test_invalid_page_does_not_save_partial_page_or_advance(self):
-        with patch('app.services.service_poller.fetch_records', return_value=[*self.records(2), {}]):
+        with patch('app.services.comparison.poller.fetch_records', return_value=[*self.records(2), {}]):
             self.poller.tick()
         self.assertEqual(self.state().status, 'blocked')
         self.assertEqual(self.state().next_offset, 0)
@@ -102,7 +102,7 @@ class PollerTests(unittest.TestCase):
             self.poller.store.enqueue(record)
         with self.factory() as db, db.begin():
             db.scalar(select(Row).where(Row.source_record_id == '0')).status = 'completed'
-        with patch('app.services.service_poller.compare_one', side_effect=RuntimeError('model error')) as compare:
+        with patch('app.services.comparison.poller.compare_one', side_effect=RuntimeError('model error')) as compare:
             self.poller.process_pending()
         self.assertEqual(compare.call_count, 2)
         self.poller.process_pending()  # Failed records not immediately retried.
@@ -113,7 +113,7 @@ class PollerTests(unittest.TestCase):
 
     def test_three_attempts_only(self):
         self.poller.store.enqueue(self.records(1)[0])
-        with patch('app.services.service_poller.compare_one', side_effect=RuntimeError('model error')) as compare:
+        with patch('app.services.comparison.poller.compare_one', side_effect=RuntimeError('model error')) as compare:
             for _ in range(5):
                 self.poller.process_pending()
                 # Store timestamps use actual UTC, so explicitly make retry due.
@@ -143,7 +143,7 @@ class PollerTests(unittest.TestCase):
         client.request.return_value = response
         with patch.dict(os.environ, {'SERVICE_URL': 'https://example.test', 'SERVICE_TOKEN': 'test',
             'SERVICE_METHOD': 'POST', 'SERVICE_BODY_JSON': '{"offset": 9, "limit": 100, "filter": "keep"}'}), \
-             patch('app.services.service_comparison.requests.Session', return_value=client):
+             patch('app.services.comparison.source.requests.Session', return_value=client):
             fetch_records(20, overrides={'offset': 2, 'limit': 20, 'startDate': 'start', 'endDate': 'end'})
         self.assertEqual(client.request.call_args.kwargs['json'],
                          {'offset': 2, 'limit': 20, 'filter': 'keep', 'startDate': 'start', 'endDate': 'end'})
@@ -176,7 +176,7 @@ class PollerTests(unittest.TestCase):
             'SERVICE_METHOD': 'POST',
             'SERVICE_BODY_JSON': '{"startDate":"old","endDate":"old","offset":9,"filter":"keep"}',
             'SERVICE_PARAMS_JSON': '{"startDate":"old","endDate":"old"}'}), \
-             patch('app.services.service_comparison.requests.Session', return_value=client):
+             patch('app.services.comparison.source.requests.Session', return_value=client):
             fetch_records(20, overrides={'offset': 0, 'limit': 20}, omit_date_filters=True)
         self.assertEqual(client.request.call_args.kwargs['json'], {'offset': 0, 'limit': 20, 'filter': 'keep'})
         self.assertEqual(client.request.call_args.kwargs['params'], {})

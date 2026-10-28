@@ -10,9 +10,10 @@ export async function getMe(): Promise<User | null> {
 }
 
 export async function login(username: string, password: string): Promise<User> {
+  const bytes = new TextEncoder().encode(`${username}:${password}`);
+  const credentials = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
   const response = await apiFetch(buildApiUrl('/auth/login'), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    method: 'POST', headers: { Authorization: `Basic ${credentials}` },
   });
   if (!response.ok) {
     throw new Error(response.status === 429 ? 'Олон удаа оролдлоо. Түр хүлээнэ үү.' :

@@ -1,5 +1,5 @@
 import { apiFetch, buildApiUrl } from "./client";
-import type { LiveRecognitionResult, SeatbeltResult } from "../models/live";
+import type { LiveRecognitionResult } from "../models/live";
 
 export interface ServiceComparison {
   recordId: string;
@@ -17,7 +17,6 @@ export interface ServiceComparison {
   viewStatus: string;
   prediction: LiveRecognitionResult | null;
   error?: string;
-  seatbelt?: SeatbeltResult;
 }
 
 export interface ServiceComparisonBatch {

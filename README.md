@@ -1,160 +1,194 @@
 # Тээврийн хэрэгсэл таних систем
 
-Энэ төсөл нь React frontend болон FastAPI backend ашиглан зураг, бичлэг,
-камерын дүрсээс тээврийн хэрэгслийг илрүүлж, ангилан таних зориулалттай.
-
-Танилтын үндсэн дараалал:
-
-1. YOLO object detection model зураг эсвэл бичлэг дээрээс тээврийн хэрэгслийг илрүүлнэ.
-2. Тухайн илэрсэн тээврийн хэрэгслийн хэсгийг crop хийнэ.
-3. Тээврийн хэрэгслийн төрлийг ангилах classifier нь model, color, tyope болон view гэсэн 4 төрлийг ангилна.
-4. Машины дугаар танилтын системтэй холбох боломжтой API .
-
-## Backend тохиргоо
-
-Backend ажиллах үед дараах environment variable-уудыг заавал өгнө:
+Recognition service нь бүх detect, classification, видео/камерын tracking-ийг
+хийдэг. Backend болон worker model ачаалахгүй, HTTP API-аар service-ийг дуудна.
+Frontend-ийн одоогийн endpoint болон event формат хэвээр.
 
 ```text
-API_PREFIX=/api/v1
-CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-API_KEY=<api-key>
+frontend → backend → vehicle_recognition_service
+              ↓               ↓
+          PostgreSQL     YOLO + classifier + tracker
+              ↑
+            worker → vehicle_recognition_service
 ```
 
-## Docker image үүсгэх
-
-Root directory-оос:
-
-```bash
-sudo docker build \
-  -t vehicle-recognition-backend:v1 \
-  ./backend
-```
-
-## Docker Compose ашиглахгүйгээр ажиллуулах
-
-API key-г terminal-аас үүсгэж container ажиллуулна:
-
-```bash
-read -rsp "API key: " API_KEY
-echo
-export API_KEY
-
-sudo --preserve-env=API_KEY docker run -d \
-  --name vehicle-recognition-backend \
-  --restart unless-stopped \
-  -p 8008:8000 \
-  -e API_KEY \
-  -e API_PREFIX="/api/v1" \
-  -e CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5173" \
-  vehicle-recognition-backend:v1
-
-unset API_KEY
-```
-
-## Docker Compose ашиглах
-
-```bash
-sudo docker compose up -d
-```
-docker-compose.yaml Жишээ:
-
-```yaml
-services:
-  backend:
-    image: vehicle-recognition-backend:v1
-    container_name: vehicle-recognition-backend
-    environment:
-      API_PREFIX: "/api/v1"
-      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
-      API_KEY: "api-key"
-    ports:
-      - "8008:8000"
-    restart: unless-stopped
-```
-
----
-
-# Vehicle Recognition System
-
-This project uses a React frontend and FastAPI backend to detect and classify
-vehicles from images, videos, and camera streams.
-
-The main recognition workflow:
-
-1. The YOLO object detection model detects vehicles from images or videos.
-2. The detected vehicle region is cropped.
-3. The vehicle classifier predicts four attributes: model, color, type, and
-   view.
-4. An API is provided for integration with a license plate recognition system.
-
-## Backend Configuration
-
-The following environment variables are required when running the backend:
+## Кодын бүтэц
 
 ```text
+backend/app/
+  main.py                      # FastAPI router/middleware бүртгэл
+  lifespan.py                  # DB, client, service lifecycle
+  worker.py                    # Автомат worker-ийн эхлэх цэг
+  api/
+    auth.py                    # Login, logout, me
+    health.py                  # Recognition readiness
+    recognition.py             # Зураг, vehicle bbox, plate bbox
+    video.py                   # Видео session, stream, WebSocket
+    live.py                    # Камерын stream, WebSocket
+    comparison.py              # Харьцуулалт, түүх, worker төлөв
+  core/                        # Config, database, passwords, API-key security
+  middleware/auth.py           # Session, Basic Auth, Origin хамгаалалт
+  commands/init_db.py           # DB/admin бэлтгэх команд
+  models/
+    user.py                    # User, login session
+    video_session.py           # Видео session-ийн эзэмшигч
+    recognition.py             # Харьцуулалтын үр дүнгийн хүснэгт
+    source_token.py             # Гаднын service token
+    sync_state.py               # Worker-ийн явц
+  schemas/
+    common.py                  # ApiModel, camelCase JSON
+    auth.py                    # Хэрэглэгчийн хариу
+    recognition.py             # Bbox, prediction, recognition response
+    video.py                   # Video session/event/status
+    comparison.py              # Comparison/history/worker response
+  services/
+    auth.py                    # Login logic, анхны admin
+    media.py                   # Upload, decode/encode, crop хадгалалт
+    recognition/
+      client.py                # Зөвхөн HTTP transport
+      results.py               # Prediction validation, crop, result cache
+      video.py                 # Remote session + DB ownership
+    comparison/
+      auth.py                  # Гаднын service-ийн token lifecycle
+      source.py                # Бүртгэл болон зураг татах
+      compare.py               # Бүртгэлтэй харьцуулах дүрэм
+      store.py                 # DB хадгалалт, түүх, worker status
+      poller.py                # Давтамж, retry, pending records
+vehicle_recognition_service/    # YOLO, classifier, tracking — тусдаа service
+frontend/                      # React интерфейс
+train/                         # Model сургах код
+```
+
+Зураг таних урсгал: `api/recognition.py` → `services/recognition/results.py`
+→ `services/recognition/client.py` → recognition service. `results.py` нь хариуг
+шалгаж `media.py`-гаар crop хадгална; HTTP client нь файл хадгалах/DB логикгүй.
+
+Харьцуулалтын урсгал: `comparison/source.py` → `comparison/compare.py`
+→ recognition results → `comparison/store.py`. `comparison/auth.py` нь гаднын
+системийн token-ийг, `services/auth.py` нь хэрэглэгчийн нэвтрэлтийг удирдана.
+
+Файлын байрлал өөрчлөгдсөн ч public URL, хүсэлтийн бүтэц болон DB хүснэгтийн нэрүүд
+хэвээр. `schemas/comparison.py` хариуг баримтжуулж, өгөөгүй optional талбарыг JSON-д
+нэмэхгүй. `live_manager.py` зэрэг дан дамжуулах wrapper байхгүй.
+
+Backend дээр OpenCV нь зураг decode/encode, crop хадгалахад үлдсэн. YOLO, PyTorch, classifier, frame tracking энд байхгүй.
+`__init__.py` нэмээгүй; existing namespace-package бүтэц ашиглана.
+
+## Хамт ажиллуулах
+
+Root `.env` дотор дор хаяж:
+
+```dotenv
 API_PREFIX=/api/v1
+API_KEY=replace-with-a-long-random-key
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-API_KEY=<api-key>
+DB_HOST=postgres
+DB_PORT=5432
+DB_USER=vehicle_app
+DB_PASSWORD=replace-with-a-database-password
+DB_NAME=vehicle_recognition
+POSTGRES_USER=vehicle_app
+POSTGRES_PASSWORD=replace-with-a-database-password
+POSTGRES_DB=vehicle_recognition
+# Local HTTP development only; HTTPS production-д true.
+COOKIE_SECURE=false
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-an-admin-password
 ```
 
-## Building the Docker Image
+DB болон POSTGRES нэр/нууц үгүүд таарах ёстой. Байгаа PostgreSQL volume-ийн
+нууц үгийг `.env` засах төдийд өөрчлөхгүй. Нууцуудаа Git-д оруулахгүй.
 
-Run the following command from the root directory:
+Optional тохиргоо:
+
+```dotenv
+RECOGNITION_API_KEY=separate-internal-key
+MODEL_DEVICE=cpu
+MODEL_VERSION=best_loss_model_v3
+MAX_TRACKING_SESSIONS=2
+MEDIA_ROOT=/mnt/data/car_model_img
+CAMERA_1_SOURCE=
+```
+
+`RECOGNITION_API_KEY` байхгүй бол Compose нь `API_KEY`-г ашиглана.
+Model weights: `vehicle_recognition_service/checkpoints/best_loss_model_v3.pt`,
+`vehicle_recognition_service/checkpoints/yolo11s.pt`.
 
 ```bash
-sudo docker build \
-  -t vehicle-recognition-backend:v1 \
-  ./backend
+docker compose up -d --build
+cd frontend
+npm ci
+npm run dev
 ```
 
-## Running Without Docker Compose
+Backend: `http://localhost:8008`; recognition service нь root Compose-д дотоод
+сүлжээнд `http://recognition:8000/api/v1` хаягаар ажиллана.
+Backend, worker ижил `MEDIA_ROOT` mount ашиглана. Recognition service өөрийн
+түр storage-тай; backend-ийн локал замыг уншихгүй.
 
-Enter the API key from the terminal and start the container:
+Тусад нь recognition service гаргах, API contract, tracking-ийн хязгаарууд:
+[vehicle_recognition_service/README.md](vehicle_recognition_service/README.md).
+Backend-ийг Docker-гүй ажиллуулах бол `RECOGNITION_URL=http://localhost:8009/api/v1`,
+`RECOGNITION_API_KEY`, DB болон API тохиргоонуудаа environment-д экспортлоод
+`backend/` дотроос `uvicorn app.main:app --port 8008` ажиллуулна.
+`.env` файлыг Python өөрөө автоматаар уншихгүй.
+
+## Шилжилтийн тэмдэглэл
+
+- `vehicle_bbox_api/` → `vehicle_recognition_service/` болсон.
+- Backend-ийн public `/inference/vehicle` нь plate bbox хэвээр;
+  standalone service-ийн `/inference/plate` руу дамжуулна.
+- Backend-ийн `/inference/vehicle-bbox` нь standalone `/inference/vehicle` руу дамжуулна.
+- Координатгүй бүтэн зураг: standalone `/inference/image` шинээр нэмэгдсэн.
+- Видео файлыг service рүү нэг удаа дамжуулна. Frame loop, YOLO tracking, ROI,
+  classifier бүгд service дотор. Backend event-ийг авч crop хадгална.
+- `recognition_sessions` шинэ хүснэгт видео session-ийг үүсгэсэн хэрэглэгчтэй холбоно.
+  Startup дээр хүснэгт үүснэ; хуучин хүснэгтүүдийг устгахгүй.
+- Видео session-ийг эзэмшигч нь унших/зогсоох боломжтой. Камер нь өмнөх шиг
+  нэвтэрсэн хэрэглэгчдийн хамтын stream байна.
+- Session-үүд restart хооронд сэргээгдэхгүй. Нэг recognition instance, нэг worker
+  process ашиглана; concurrency/TTL/429/409-ийн тайлбарыг service README-ээс үзнэ үү.
+- Worker/API хоёр model ачаалахгүй. Хуучин `backend/checkpoints/` файлуудыг
+  автоматаар устгаагүй, backend Docker build-д оруулахгүй.
+- Worker өмнө өөр `/mnt/data/car_model_imgs` хавтаст зураг хадгалсан бол түүхийн
+  зургуудыг сонгосон `MEDIA_ROOT` руу нүүлгэх шаардлагатай; энэ өөрчлөлт өөрөө нүүлгэхгүй.
+
+## Шалгалт
+
+Backend болон тестийн dependency-уудыг `backend/requirements.txt`-аар суулгана.
 
 ```bash
-read -rsp "API key: " API_KEY
-echo
-export API_KEY
-
-sudo --preserve-env=API_KEY docker run -d \
-  --name vehicle-recognition-backend \
-  --restart unless-stopped \
-  -p 8008:8000 \
-  -e API_KEY \
-  -e API_PREFIX="/api/v1" \
-  -e CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5173" \
-  vehicle-recognition-backend:v1
-
-unset API_KEY
-```
-
-## Running with Docker Compose
-
-```bash
-sudo docker compose up -d
-```
-
-Example `docker-compose.yaml`:
-
-```yaml
-services:
-  backend:
-    image: vehicle-recognition-backend:v1
-    container_name: vehicle-recognition-backend
-    environment:
-      API_PREFIX: "/api/v1"
-      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
-      API_KEY: "api-key"
-    ports:
-      - "8008:8000"
-    restart: unless-stopped
+.venv/bin/python -m unittest discover -s backend/tests -v
+.venv/bin/python -m unittest discover -s vehicle_recognition_service/tests -v
+cd frontend
+npm run build
+npm run lint
+node --test tests/*.test.cjs
 ```
 
 ## Username/password нэвтрэлт, PostgreSQL
 
+`POST /auth/login` (API prefix-ийн дор) нь `Authorization: Basic <base64(username:password)>`
+header-аар UTF-8 нэвтрэх мэдээлэл авна; JSON body ашиглахгүй. Амжилттай нэвтэрсний
+дараа HttpOnly session cookie үүсгэж, дараагийн хүсэлтүүд cookie ашиглана.
+Basic мэдээлэл байхгүй эсвэл буруу бол `401` болон `WWW-Authenticate: Basic` буцаана.
+Production орчинд HTTPS ашиглана.
+
+Скриптээс зураг болон хамгаалагдсан HTTP API татахад login эсвэл session cookie
+шаардлагагүй: хүсэлт бүрд `Authorization: Basic <base64(username:password)>` илгээнэ.
+Жишээ: `curl -u USERNAME http://localhost:5173/media/crop/IMAGE.jpg -o IMAGE.jpg`
+(`curl` нууц үгийг асууна). Origin header шаардлагагүй. Вебийн session нэвтрэлт
+мөн ажиллана; `API-Key` ашигладаг service endpoint-уудын хамгаалалт хэвээр.
+
 Auth нь SQLAlchemy `User`, `Session` model, Argon2id password hash болон
 HttpOnly session cookie ашиглана. Alembic байхгүй. Backend эхлэхэд байхгүй
-хүснэгтүүдийг үүсгэнэ; `app/commands/init_db.py` нь admin хэрэглэгч үүсгэнэ. Аль аль нь
+хүснэгтүүдийг үүсгэнэ. `ADMIN_USERNAME`, `ADMIN_PASSWORD` тохируулсан бол
+backend анх асахдаа admin хэрэглэгч автоматаар үүсгэнэ. Хоёуланг нь
+тохируулаагүй бол хэрэглэгч үүсгэхгүй; зөвхөн нэгийг өгвөл startup алдаа гарна.
+Байгаа хэрэглэгчийн password болон role-ийг өөрчлөхгүй.
+Compose-ийн backend.environment хэсэгт эдгээр утгыг шууд өгч болно, эсвэл
+одоогийн compose-ийн хувьсагчаар `.env`-ээс өгнө. Нууц үгийг repository-д commit хийхгүй.
+`app/commands/init_db.py` командаар мөн admin хэрэглэгч үүсгэж болно. Аль аль нь
 байгаа хүснэгтийн багануудыг өөрчлөхгүй.
 
 ### Эхний тохиргоо
@@ -240,7 +274,7 @@ Auth тестүүд SQLite fixture дээр ажиллана; PostgreSQL deploym
 ### Backend кодын бүтэц
 
 - `app/main.py`: FastAPI, router болон middleware бүртгэл.
-- `app/lifespan.py`: database, танилтын model эхлүүлэх болон хаах.
+- `app/lifespan.py`: database болон recognition HTTP client эхлүүлэх, холболт хаах.
 - `app/core/`: тохиргоо, database холболт, password hash, API key шалгалт.
 - `app/models/`: SQLAlchemy User, Session хүснэгтүүд.
 - `app/schemas/`: нийтлэг, нэвтрэлт, танилтын request/response бүтэц.
@@ -290,7 +324,7 @@ Service-ийн query эсвэл body шаардлагатай бол
 Нэвтэрсний дараа **Service харьцуулах** хуудасны **20 машин шалгах** товчийг
 дарна. Backend `POST /api/service/compare-batch` хүсэлтээр service-ийн
 `items` жагсаалтын эхний 20 record-ийг авч, тус бүрийн `full_photo` зургийг
-одоогийн танилтын pipeline-д өгнө. Frontend дөрвөн танилт (model, color,
+recognition service рүү өгнө. Frontend дөрвөн танилт (model, color,
 type, view) болон confidence-ийг машин бүр дээр харуулна. Service-тэй
 нэршил нь таарсан model, color, type-ийг 90%-ийн confidence босгоор
 харьцуулна. Type-ийн нэршил таарахгүй эсвэл view-ийн эх утга байхгүй бол
@@ -298,75 +332,17 @@ type, view) болон confidence-ийг машин бүр дээр харуул
 confidence хамгийн өндөр машиныг сонгож, тэр машины model, color, type, view
 үр дүнг ашиглана. Машин илрээгүй бол `NO_VEHICLE_DETECTED` гэж харуулна.
 Нэг record-ийн зураг алдаатай байсан ч
-бусад record-ийг үргэлжлүүлэн боловсруулна. Зургийн хуулбар `runtime/crops`-д
-хадгалагдана; харьцуулалтын metadata-г PostgreSQL-д хараахан бичихгүй.
-
-### Урд талаас харагдсан машины суудлын бүс шалгах
-
-Service харьцуулалтын үед сонгосон машины
-`view.label=front_side`, confidence нь тохируулсан босгоос багагүй байвал
-seatbelt service-ийг дуудна. Бусад зурагт шалгаагүй шалтгааныг харуулна.
-Файл таних хуудасны зураг болон бичлэгт мөн энэ шалгалт хийгдэнэ:
-`POST /inference/image`, `POST /inference/video` болон video session-ийн
-шинэ танилтын event бүрд машины өөрийн crop ашиглана. Бичлэгийн tracking
-нь өмнө таньсан track-ийг дахин танихгүй тул frame бүрд seatbelt дуудахгүй.
-Анх таних үед урд талаас харагдаагүй track-ийг дараа нь дахин бүс шалгахгүй.
-Seatbelt хариу хүлээхэд тухайн бичлэгийн боловсруулалт түр удааширч болно.
-Live камер болон `/inference/vehicle` integration endpoint өөрчлөгдөөгүй.
-
-```dotenv
-SEATBELT_URL=http://host.docker.internal:8000/predict
-SEATBELT_VIEW_MIN_CONFIDENCE=0.90
-```
-
-Одоогийн seatbelt Compose нь host-ийн 8000 портыг нээдэг.
-Машин таних backend-ийн Compose-д `host.docker.internal:host-gateway`
-нэмсэн тул тусдаа ажиллаж буй seatbelt контейнерийн тэр портоор холбогдоно.
-Хоёр service ижил host дээр ажиллана гэж үзсэн. Backend-ийг Docker-гүй
-ажиллуулбал URL-ийг `http://localhost:8000/predict` болгоно. Өөр сервер
-ашиглавал хүрч болох хаягаар солино. Seatbelt project-ийн код өөрчлөгдөөгүй.
-
-Pipeline машины тайрсан хэсгийн координатыг `vehicleBbox` талбарт нэмнэ.
-Тэр координатаар RAM дахь эх зургаас crop авч, хэмжээг жижигрүүлэхгүй,
-PNG байт болгон `Content-Type: image/png`-тай raw body илгээнэ.
-Classifier-ийн жижигрүүлсэн tensor ашиглахгүй. Дамжуулалтад түр файл,
-тусдаа annotated зураг үүсгэхгүй; одоогийн машины зураг хадгалалт хэвээр.
-
-Seatbelt service нэг зураг зэрэг боловсруулдаг тул backend дотор
-дуудлагуудыг lock-оор дарааллуулна. `503` үед 1 секунд хүлээгээд нэг удаа
-давтана. Холболтын timeout 3 секунд, response унших timeout 30 секунд.
-Timeout, service алдаа, буруу response нь машины үндсэн танилтыг устгахгүй:
-`seatbelt.status=error` болж UI дээр тайлбар харагдана.
-
-Response-ийн шинэ `seatbelt` хэсэг:
-- `status`: `completed`, `unknown`, `skipped`, `error`.
-- `reason`: төлөвийн тайлбар.
-- `detections`: `className`, `confidence`, `bbox` бүхий илрүүлэлтүүд.
-- `image`: амжилттай response-ийн crop хэмжээ.
-
-`bbox` нь илгээсэн машины crop-ийн пиксел координат.
-UI нь `person-seatbelt`, `person-noseatbelt` илрүүлэлт бүрийг confidence-той
-харуулна; жолооч/зорчигч гэж ялгахгүй. Зөвхөн `seatbelt`, `windshield`
-эсвэл хоосон илрүүлэлт ирвэл `unknown`; бүсгүй гэж дүгнэхгүй.
-Илрүүлэлтүүд нь model-ийн үр дүн бөгөөд давхар box байж болох тул
-баталгаатай хүний тоо гэж нэгтгэхгүй. Үр дүн database-д хараахан хадгалагдахгүй.
-
-Seatbelt контейнер ажиллаж байгаа үед backend-ийн өөрчлөлтийг:
-```bash
-docker compose up -d --build backend
-```
-командаар оруулаад Service харьцуулалтын хуудсаар шалгана.
-
-Файл таних үр дүнгийн `seatbelt` талбар нь REST response болон video
-WebSocket event-д хамт ирнэ. Frontend-ийн `SeatbeltDetails` компонентыг
-файл болон Service харьцуулалтын картууд хамт ашиглана.
+бусад record-ийг үргэлжлүүлэн боловсруулна. Бүтэн зургийн хуулбар `runtime/full_photo`-д, crop нь `runtime/crops`-д
+хадгалагдана; харьцуулалтын metadata-г PostgreSQL-д бичнэ.
 
 ### Service харьцуулалтын database хадгалалт
 
 `POST /api/service/compare-batch` (20 бичлэг), мөн `compare-next` нь
-`vehicle_recognitions` хүснэгтэд мэдээлэл хадгална. Backend эхлэхэд одоогийн
-`create_all` механизмаар шинэ хүснэгтийг үүсгэнэ; backend-ийг шинэ кодоор дахин
-асаах шаардлагатай. Одоо байгаа хүснэгтүүдийг өөрчлөхгүй.
+`vehicle_recognitions` хүснэгтэд мэдээлэл хадгална. Backend болон worker эхлэхэд
+Alembic migration-уудыг PostgreSQL lock ашиглан дарааллаар ажиллуулна. Эхний
+migration нь нийцтэй хуучин schema-г өгөгдөл устгахгүйгээр хувилбаржуулж, дараагийн
+migration нь `seatbelt_result` багана байхгүй бол нэмнэ. Дэлгэрэнгүй: [Migration заавар](backend/migrations/README.md),
+[төвлөрсөн тохиргоо](backend/CONFIGURATION.md).
 
 - Бүх зөв форматтай эх бичлэгийг зураг татахаас өмнө `pending` төлөвөөр хадгална.
 - Service-ийн `_id` нь `source_record_id` гэсэн давтагдахгүй түлхүүр болно.
@@ -376,13 +352,12 @@ WebSocket event-д хамт ирнэ. Frontend-ийн `SeatbeltDetails` комп
 - `processing` → `completed` / `failed` төлөв, оролдлогын тоо, алдаа, эхэлсэн
   болон дууссан хугацааг хадгална. Танилтын алдаа нь дараагийн бичлэгийг зогсоохгүй.
   Database алдаа гарвал API 503 буцаана; хадгалаагүй үр дүнг амжилттай гэж буцаахгүй.
-- `prediction`, `comparison`, `vehicle_bbox`, `seatbelt_result` нь PostgreSQL JSONB.
-  Машины bbox эх зураг дээрх пиксел координаттай. Seatbelt bbox нь **машины
-  тайралтын** пиксел координаттай хэвээр хадгалагдана: `coordinateSpace`, `units`,
-  `bboxFormat`, `cropOrigin` болон service-ийн буцаасан `image` хэмжээтэй.
-  Эх зурагт байрлуулахдаа cropOrigin-ийн x1/y1-ийг seatbelt координатад нэмнэ.
-- Зураг runtime/crops дотор файл хэлбэрээр, харьцангуй зам болон эх зургийн хэмжээ
-  database-д хадгалагдана. `model_version` нь classifier checkpoint-ийн файлын нэр
+- `prediction`, `comparison`, `vehicle_bbox` нь PostgreSQL JSONB.
+  Машины bbox эх зургийн pixel xyxy координаттай.
+- Seatbelt integration хасагдсан. Шинэ хүсэлтээр бүс шалгахгүй, API/UI-д талбар
+  гаргахгүй. Өмнөх DB-ийн `seatbelt_result` багана, түүхэн өгөгдлийг хадгалсан.
+- Бүтэн зураг runtime/full_photo дотор файл хэлбэрээр, харьцангуй зам болон эх зургийн хэмжээ
+  database-д хадгалагдана. `model_version` нь recognition service-ийн `MODEL_VERSION` утга
   бөгөөд агуулгын hash биш; ижил нэртэй checkpoint соливол хувилбарыг ялгахгүй.
 
 Хадгалалтын тестүүд SQLite дээр transaction, давхардал, алдаа, bbox-ийг шалгана;
@@ -434,3 +409,58 @@ sudo docker compose logs --tail=100 worker
 
 Blocked шалтгааныг зассаны дараа `docker compose restart worker` хийнэ. Эх үүсвэрийн
 URL/method/filter өөрчлөгдвөл хадгалсан config fingerprint-ийг шалгаж удирдана.
+
+### Vehicle bbox-оор шууд classifier дуудах API
+
+Өөр project-оос **бүтэн зураг + нэг машины bbox** илгээнэ. Энэ урсгал detector,
+автомат worker дуудахгүй; database болон runtime хавтаст зураг,
+үр дүн хадгалахгүй. Backend энэ хүсэлтийг recognition service-ийн
+`/inference/vehicle` endpoint рүү дамжуулна; service ажиллаж байх шаардлагатай.
+
+Хоёр endpoint нь `API-Key` header шаарддаг. Cookie/session login, Origin header
+шаардахгүй. Доорх `/api`-г өөрийн `API_PREFIX`-тэй тааруулна.
+
+`POST /api/inference/vehicle-bbox` — application/json:
+
+```json
+{
+  "eventId": "event-123",
+  "imageBase64": "<base64 эсвэл data:image/png;base64,...>",
+  "vehicleBbox": {"x1": 100, "y1": 80, "x2": 700, "y2": 500}
+}
+```
+
+`POST /api/inference/vehicle-bbox/upload` — multipart/form-data:
+
+```bash
+curl -X POST http://localhost:8008/api/inference/vehicle-bbox/upload \
+  -H "API-Key: <your-api-key>" \
+  -F "file=@car.jpg" \
+  -F "event_id=event-123" \
+  -F "vehicle_x1=100" -F "vehicle_y1=80" \
+  -F "vehicle_x2=700" -F "vehicle_y2=500"
+```
+
+Bbox нь ирүүлсэн зураг дээрх бүхэл пиксел координат; x2/y2 нь тайралтын орохгүй
+баруун/доод хил (`frame[y1:y2, x1:x2]`). Bbox-ийг тэлэхгүй, зураг гадна гарсан
+координатыг чимээгүй засахгүй. Нэг машинаас модель, өнгө, төрөл, харагдац болон
+анхны confidence утгуудыг буцаана. Confidence бага байсан ч Unknown гэж дарж бичихгүй.
+
+```json
+{
+  "eventId": "event-123",
+  "vehicleBbox": {"x1": 100, "y1": 80, "x2": 700, "y2": 500},
+  "result": {
+    "model": {"label": "Toyota Prius", "confidence": 0.96},
+    "color": {"label": "white", "confidence": 0.94},
+    "vehicleType": {"label": "car", "confidence": 0.98},
+    "view": {"label": "front_side", "confidence": 0.95}
+  }
+}
+```
+
+`eventId` өгөөгүй бол сервер үүсгэнэ. Танилтын бүх талбар хоосон бол 200 хариунд
+`reasonCode: CLASSIFICATION_FAILED` буцаана. API key буруу/байхгүй: 401;
+буруу зураг/bbox: 422; зургийн хэмжээ хэтэрсэн: 413; classifier бэлэн биш: 503;
+recognition service-ийн дотоод алдаа: 503. Одоогийн image byte/pixel хязгаарууд үйлчилнэ.
+Postman collection: `postman/Vehicle Bbox API.postman_collection.json`.

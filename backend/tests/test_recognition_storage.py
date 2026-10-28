@@ -11,9 +11,9 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 with patch.dict(os.environ, {'API_PREFIX': '/api', 'API_KEY': 'test',
                              'CORS_ORIGINS': 'http://localhost:5173'}):
-    from app.models.vehicle_recognition import VehicleRecognition as Row
-    from app.services.service_comparison import compare_batch, ServiceComparisonError
-    from app.services.recognition_store import RecognitionStore
+    from app.models.recognition import VehicleRecognition as Row
+    from app.services.comparison.compare import compare_batch, ServiceComparisonError
+    from app.services.comparison.store import RecognitionStore
 
 
 class StorageTests(unittest.TestCase):
@@ -24,21 +24,19 @@ class StorageTests(unittest.TestCase):
         self.record = {'_id': 'one', 'plate': '1234УБА', 'mark': 'Toyota',
                        'model': 'Prius', 'color': 'Цагаан', 'typeNameEng': 'car',
                        'full_photo': 'uploads/one.jpg', 'event_date': '2026-09-23T02:00:00Z'}
-        self.result = {'recordId': 'one', 'imageUrl': '/media/crops/one.jpg',
+        self.result = {'recordId': 'one', 'imageUrl': '/media/full_photo/one.jpg',
                        'imageWidth': 1920, 'imageHeight': 1080, 'imageStatus': 'OK',
                        'modelStatus': 'MATCH', 'prediction': {
                            'vehicleBbox': {'x1': 10, 'y1': 20, 'x2': 210, 'y2': 120},
-                           'model': {'label': 'Toyota Prius', 'confidence': .97}},
-                       'seatbelt': {'status': 'completed', 'image': {'width': 200, 'height': 100},
-                                    'detections': [{'className': 'seatbelt', 'confidence': .95,
-                                                    'bbox': [1, 2, 30, 40]}]}}
+                           'model': {'label': 'Toyota Prius', 'confidence': .97}}}
+
 
     def tearDown(self):
         self.engine.dispose()
 
     def run_batch(self, records, process):
-        with patch('app.services.service_comparison.fetch_records', return_value=records), \
-             patch('app.services.service_comparison.compare_one', side_effect=process):
+        with patch('app.services.comparison.compare.fetch_records', return_value=records), \
+             patch('app.services.comparison.compare.compare_one', side_effect=process):
             return compare_batch(object(), db_sessions=self.factory)
 
     def test_batch_saved_before_images_and_duplicate_updates_same_row(self):
@@ -59,10 +57,8 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(row.source_model, 'Prius')
             self.assertEqual(row.image_width, 1920)
             self.assertEqual(row.vehicle_bbox['box']['x1'], 10)
-            self.assertEqual(row.seatbelt_result['coordinateSpace'], 'vehicle_crop')
-            self.assertEqual(row.seatbelt_result['detections'][0]['bbox'], [1, 2, 30, 40])
-            self.assertEqual(row.seatbelt_result['cropOrigin']['y1'], 20)
-            self.assertEqual(row.local_image_path, 'crops/one.jpg')
+            self.assertIsNone(row.seatbelt_result)
+            self.assertEqual(row.local_image_path, 'full_photo/one.jpg')
 
     def test_failure_persisted_other_records_continue_and_retry_clears_error(self):
         def process(record, pipeline):
@@ -95,8 +91,7 @@ class StorageTests(unittest.TestCase):
         self.assertFalse(store.start(self.record))
 
     def test_no_vehicle_is_completed_not_failed(self):
-        result = {**self.result, 'prediction': None, 'imageStatus': 'NO_VEHICLE_DETECTED',
-                  'seatbelt': {'status': 'skipped', 'detections': []}}
+        result = {**self.result, 'prediction': None, 'imageStatus': 'NO_VEHICLE_DETECTED'}
         self.run_batch([self.record], lambda *args: result)
         with self.factory() as db:
             row = db.scalar(select(Row))
@@ -116,7 +111,7 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(item['sourceModel'], 'Prius')
         self.assertEqual(item['modelStatus'], 'MATCH')
         self.assertEqual(item['prediction'], self.result['prediction'])
-        self.assertEqual(item['seatbelt']['detections'], self.result['seatbelt']['detections'])
+        self.assertNotIn('seatbelt', item)
         self.assertEqual(store.list_results(2, 1)['items'], [])
 
     def test_history_pending_failed_and_missing_image(self):
@@ -132,10 +127,37 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(item['error'], 'Download failed')
         self.assertEqual(item['imageStatus'], 'failed')
         self.run_batch([self.record], lambda *args: self.result)
-        with patch('app.services.recognition_store.Path.is_file', return_value=False):
+        with patch('app.services.comparison.store.Path.is_file', return_value=False):
             self.assertIsNone(store.list_results()['items'][0]['imageUrl'])
-        with patch('app.services.recognition_store.Path.is_file', return_value=True):
-            self.assertEqual(store.list_results()['items'][0]['imageUrl'], '/media/crops/one.jpg')
+        with patch('app.services.comparison.store.Path.is_file', return_value=True):
+            self.assertEqual(store.list_results()['items'][0]['imageUrl'], '/media/full_photo/one.jpg')
+
+    def test_legacy_image_path_still_resolves(self):
+        self.run_batch([self.record], lambda *args: self.result)
+        with self.factory() as db, db.begin():
+            db.scalar(select(Row)).local_image_path = 'crops/old.jpg'
+        with patch('app.services.comparison.store.Path.is_file', return_value=True):
+            item = RecognitionStore(self.factory).list_results()['items'][0]
+            self.assertEqual(item['imageUrl'], '/media/crops/old.jpg')
+
+    def test_reprocessing_preserves_legacy_seatbelt_data_without_exposing_it(self):
+        store = RecognitionStore(self.factory)
+        store.enqueue(self.record)
+        legacy = {'status': 'completed', 'detections': []}
+        with self.factory() as db, db.begin():
+            db.scalar(select(Row)).seatbelt_result = legacy
+        store.start(self.record)
+        store.complete('one', self.result)
+        with self.factory() as db:
+            self.assertEqual(db.scalar(select(Row)).seatbelt_result, legacy)
+        with self.factory() as db, db.begin():
+            row = db.scalar(select(Row))
+            row.prediction = {**row.prediction, 'seatbelt': legacy}
+        item = store.list_results()['items'][0]
+        self.assertNotIn('seatbelt', item)
+        self.assertNotIn('seatbelt', item['prediction'])
+        with self.factory() as db:
+            self.assertEqual(db.scalar(select(Row)).prediction['seatbelt'], legacy)
 
     def test_empty_history(self):
         self.assertEqual(RecognitionStore(self.factory).list_results(),

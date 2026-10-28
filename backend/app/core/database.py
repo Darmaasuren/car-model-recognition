@@ -1,5 +1,5 @@
 """Database configuration shared by the API and the standalone init command."""
-import os
+from app.core.config import get_database_settings
 
 from sqlalchemy import URL, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -10,14 +10,9 @@ class Base(DeclarativeBase):
 
 
 def database_url():
-    return URL.create(
-        'postgresql+psycopg',
-        username=os.getenv('DB_USER', 'vehicle_app'),
-        password=os.environ['DB_PASSWORD'],
-        host=os.getenv('DB_HOST', 'localhost'),
-        port=int(os.getenv('DB_PORT', '5432')),
-        database=os.getenv('DB_NAME', 'vehicle_recognition'),
-    )
+    config = get_database_settings()
+    return URL.create('postgresql+psycopg', username=config.username, password=config.password,
+                      host=config.host, port=config.port, database=config.name)
 
 
 def make_database():
@@ -25,9 +20,16 @@ def make_database():
     return engine, sessionmaker(engine, expire_on_commit=False)
 
 
-def create_tables(engine):
-    """Serialize startup DDL across the API and worker containers."""
+def upgrade_database(engine):
+    """Apply versioned migrations, serialized across API and worker startup."""
+    from pathlib import Path
+    from alembic import command
+    from alembic.config import Config
+
+    root = Path(__file__).resolve().parents[2]
+    config = Config(str(root / "alembic.ini"))
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
             connection.execute(text("SELECT pg_advisory_xact_lock(731904823)"))
-        Base.metadata.create_all(connection)
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")

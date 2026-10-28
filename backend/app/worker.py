@@ -1,35 +1,33 @@
 """Run with python -m app.worker. A PostgreSQL lock allows only one worker."""
 import logging
+from app.core.observability import configure_logging, event
 import signal
 from threading import Event
 
 from sqlalchemy import text
-from app.core.database import create_tables, make_database
-from app.models.service_sync import ServiceSync
-from app.models.user_model import utcnow
-from app.services.service_auth import ServiceTokenProvider
-from app.services.service_poller import PollConfig, ServicePoller
+from app.services.seatbelt import SeatbeltService
+from app.core.database import upgrade_database, make_database
+from app.models.sync_state import ServiceSync
+from app.models.user import utcnow
+from app.services.comparison.auth import ServiceTokenProvider
+from app.services.comparison.poller import PollConfig, ServicePoller
 
 log = logging.getLogger(__name__)
 
 
-def build_pipeline():
+def build_recognition():
     from app.core.config import settings
-    from app.services.classifier import VehicleClassifier
-    from app.services.detector import VehicleDetector
     from app.services.media import MediaService
-    from app.services.pipeline import RecognitionPipeline
+    from app.services.recognition.client import RecognitionClient
+    from app.services.recognition.results import RecognitionResults
     media = MediaService(upload_dir=settings.upload_dir, crop_dir=settings.crop_dir,
                          output_dir=settings.output_dir)
-    return RecognitionPipeline(
-        detector=VehicleDetector(model_path=settings.detector_model_path,
-                                 confidence=settings.detector_confidence, device=settings.device),
-        classifier=VehicleClassifier(model_path=settings.classifier_model_path, device=settings.device),
-        media=media)
+    return RecognitionResults(media, RecognitionClient(), SeatbeltService())
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    configure_logging()
     stop = Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
@@ -42,7 +40,7 @@ def main():
             if not acquired:
                 log.info("Another service worker is already running.")
                 return
-            create_tables(engine)
+            upgrade_database(engine)
             try:
                 config = PollConfig.from_env()
             except ValueError as error:
@@ -81,8 +79,8 @@ def main():
                 return
             with factory() as db, db.begin():
                 db.get(ServiceSync, 1).status = "starting"
-            poller.pipeline = build_pipeline()
-            log.info("Service worker started: 20 records, minimum interval 1200 seconds, first page, no date filters.")
+            poller.recognition = build_recognition()
+            event("worker.started", page_size=20, interval_seconds=1200, date_filters=False)
             while not stop.is_set():
                 poller.tick()
                 stop.wait(5)

@@ -31,31 +31,13 @@ class BoundingBox(ApiModel):
         return self
 
 
-class SeatbeltDetection(ApiModel):
-    class_name: str
-    confidence: float = Field(ge=0, le=1)
-    bbox: tuple[float, float, float, float]
-
-
-class SeatbeltImage(ApiModel):
-    width: int
-    height: int
-
-
-class SeatbeltResult(ApiModel):
-    status: Literal["completed", "unknown", "skipped", "error"]
-    reason: str
-    detections: list[SeatbeltDetection] = Field(default_factory=list)
-    image: SeatbeltImage | None = None
-
-
 class RecognitionResult(PlateRecognitionResult):
+    seatbelt: dict | None = Field(default=None, exclude_if=lambda value: value is None)
     event_id: str
     detected_at: datetime
     track_id: int | None = None
     crop_url: str | None = None
     vehicle_bbox: BoundingBox | None = None
-    seatbelt: SeatbeltResult | None = None
 
 
 class InferenceResponse(ApiModel):
@@ -66,29 +48,6 @@ class RecognitionEvent(ApiModel):
     type: Literal["recognition"] = "recognition"
     camera_id: str
     result: RecognitionResult
-
-
-class VideoSessionResponse(ApiModel):
-    session_id: str
-
-
-class VideoRecognitionEvent(ApiModel):
-    type: Literal["recognition"] = "recognition"
-    session_id: str
-    result: RecognitionResult
-
-
-class VideoStatusEvent(ApiModel):
-    type: Literal["status"] = "status"
-    session_id: str
-    status: Literal[
-        "pending",
-        "running",
-        "completed",
-        "error",
-        "stopped",
-    ]
-    error: str | None = None
 
 
 class PlateVehicleRequest(ApiModel):
@@ -110,3 +69,16 @@ class PlateVehicleResponse(ApiModel):
         "CLASSIFICATION_FAILED",
     ] | None = None
     reason: str | None = None
+
+
+class VehicleBboxRequest(ApiModel):
+    event_id: str | None = None
+    image_base64: str = Field(min_length=1)
+    vehicle_bbox: BoundingBox
+
+
+class VehicleBboxResponse(ApiModel):
+    event_id: str
+    vehicle_bbox: BoundingBox
+    result: PlateRecognitionResult | None = None
+    reason_code: Literal["CLASSIFICATION_FAILED"] | None = None

@@ -1,17 +1,18 @@
 from sqlalchemy import select
 
-from app.core.database import create_tables, make_database
-from app.models.user_model import User
-import app.models.service_token  # Register the service token table.
-import app.models.vehicle_recognition
-import app.models.service_sync
+from app.core.database import upgrade_database, make_database
+from app.models.user import User
+import app.models.source_token  # Register the service token table.
+import app.models.recognition
+import app.models.sync_state
+import app.models.video_session
 from app.core.passwords import hasher
 
 
 def main():
     engine, factory = make_database()
     try:
-        create_tables(engine)
+        upgrade_database(engine)
         username = input('Admin username: ').strip().lower()
         if not username:
             raise ValueError('Username is required.')

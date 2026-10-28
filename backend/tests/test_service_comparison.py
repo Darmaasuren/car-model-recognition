@@ -11,13 +11,41 @@ with patch.dict(os.environ, {
     'API_PREFIX': '/api', 'API_KEY': 'test',
     'CORS_ORIGINS': 'http://localhost:5173',
 }):
-    from app.services.service_comparison import (
-        ServiceComparisonError, compare_batch, compare_label, compare_record, fetch_record,
-        image_url_for,
+    from app.services.comparison.compare import (
+        ServiceComparisonError, compare_batch, compare_label, compare_record,
+    )
+    from app.services.comparison.source import (
+        fetch_record, image_url_for,
     )
 
 
 class ServiceComparisonTests(unittest.TestCase):
+    def test_full_photo_and_crop_are_saved_separately(self):
+        from tempfile import TemporaryDirectory
+        import cv2
+        import numpy as np
+        from app.services.media import MediaService
+        from app.services.comparison.compare import compare_one
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            frame = np.zeros((40, 60, 3), dtype=np.uint8)
+            media = MediaService(upload_dir=root / 'uploads', crop_dir=root / 'crop',
+                                 output_dir=root / 'outputs')
+            crop_url = media.save_crop(frame[:20, :30], 'vehicle')
+            with patch('app.services.comparison.compare.settings',
+                       SimpleNamespace(full_photo_dir=root / 'full_photo')), \
+                 patch('app.services.comparison.compare.image_url_for', return_value='unused'), \
+                 patch('app.services.comparison.compare.download_frame', return_value=frame), \
+                 patch('app.services.comparison.compare.compare_record', return_value={}):
+                result = compare_one({}, SimpleNamespace(model_version="test-v1"))
+            self.assertEqual(crop_url, '/media/crop/vehicle.jpg')
+            self.assertTrue(result['imageUrl'].startswith('/media/full_photo/service_'))
+            full_path = root / 'full_photo' / result['imageUrl'].rsplit('/', 1)[-1]
+            self.assertEqual(cv2.imread(str(full_path)).shape, frame.shape)
+            self.assertEqual(cv2.imread(str(root / 'crop' / 'vehicle.jpg')).shape[:2], (20, 30))
+            self.assertEqual(len(list((root / 'crop').iterdir())), 1)
+
     def test_fetch_sends_bearer_only_to_record_service(self):
         response = Mock()
         response.__enter__ = Mock(return_value=response)
@@ -34,12 +62,12 @@ class ServiceComparisonTests(unittest.TestCase):
             'SERVICE_TOKEN': 'secret-token', 'SERVICE_METHOD': 'POST',
             'SERVICE_PARAMS_JSON': '{}', 'SERVICE_BODY_JSON': '{}',
         }):
-            with patch('app.services.service_comparison.requests.Session', return_value=session):
+            with patch('app.services.comparison.source.requests.Session', return_value=session):
                 self.assertEqual(fetch_record()['_id'], 'one')
         self.assertEqual(session.request.call_args.kwargs['headers']['Authorization'],
                          'Bearer secret-token')
 
-    def test_full_photo_is_restricted_to_relative_path(self):
+    def test_full_photo_rejects_foreign_origin_and_traversal(self):
         with patch.dict(os.environ, {'IMAGE_BASE_URL': 'https://example.test/main/'}):
             self.assertEqual(image_url_for({'full_photo': 'uploads/car.png'}),
                              'https://example.test/main/uploads/car.png')
@@ -57,7 +85,7 @@ class ServiceComparisonTests(unittest.TestCase):
             model_dump=lambda **kwargs: {'model': {'label': 'Toyota Prius', 'confidence': .95}},
         )
         pipeline = SimpleNamespace(
-            classifier=SimpleNamespace(label_groups=labels),
+            label_groups=labels,
             process_image=lambda frame: [prediction],
         )
         record = {'_id': 'one', 'mark': 'Toyota', 'model': 'Prius',
@@ -79,10 +107,10 @@ class ServiceComparisonTests(unittest.TestCase):
         for predictions in ([prediction, other, missing_model],
                             [missing_model, other, prediction]):
             pipeline.process_image = lambda frame: predictions
-            with patch('app.services.service_comparison.check_seatbelt', return_value={}) as seatbelt:
-                frame = object()
+            frame = object()
+            with patch('requests.post', side_effect=AssertionError('No seatbelt HTTP call expected')):
                 result = compare_record(record, frame, pipeline)
-                seatbelt.assert_called_once_with(frame, other)
+            self.assertNotIn('seatbelt', result)
             self.assertEqual(result['imageStatus'], 'OK')
             self.assertEqual(result['prediction'], other.model_dump())
             self.assertEqual(result['modelStatus'], 'MISMATCH')
@@ -107,8 +135,8 @@ class ServiceComparisonTests(unittest.TestCase):
             if raw['_id'] == '1':
                 raise ServiceComparisonError('Missing photo')
             return {'recordId': raw['_id'], 'plate': raw['plate']}
-        with patch('app.services.service_comparison.fetch_records', return_value=records[:20]):
-            with patch('app.services.service_comparison.compare_one', side_effect=process):
+        with patch('app.services.comparison.compare.fetch_records', return_value=records[:20]):
+            with patch('app.services.comparison.compare.compare_one', side_effect=process):
                 result = compare_batch(object())
         self.assertEqual(result['count'], 20)
         self.assertEqual(result['items'][1]['error'], 'Missing photo')

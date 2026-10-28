@@ -11,3 +11,5 @@ runtime
 
 .env
 .env.*
+checkpoints_old/
+tests/

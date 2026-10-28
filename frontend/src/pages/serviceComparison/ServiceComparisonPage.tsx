@@ -1,9 +1,9 @@
+import { SeatbeltResult } from "../../components/result/SeatbeltResult";
 import { useEffect, useState } from "react";
 import { resolveMediaUrl } from "../../api/client";
 import { getWorkerStatus, getComparisons } from "../../api/serviceComparison";
 import type { ServiceComparison, ServiceWorkerStatus } from "../../api/serviceComparison";
 import "./ServiceComparisonPage.css";
-import { SeatbeltDetails } from "../../components/result/SeatbeltDetails";
 import { ImageViewer } from "../../components/mediaPreview/ImageViewer";
 
 const STATUS: Record<string, string> = {
@@ -159,9 +159,9 @@ export function ServiceComparisonPage() {
             </tbody>
           </table>
           </div>
-          <SeatbeltDetails result={result.seatbelt} />
           </>}
         </div>
+        {!result.error && <div className="service-page__occupants"><SeatbeltResult result={result.prediction?.seatbelt} /></div>}
       </article>)}
       <nav className="service-page__pagination" aria-label="Харьцуулалтын хуудас">
         <span className="service-page__total">Нийт : {total}</span>

@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
-from app.models.user_model import Session, User, utcnow
+from app.models.user import Session, User, utcnow
 from app.core.passwords import hasher
 from app.services.auth import LoginLimiter, current_user, login, logout, token_hash
 

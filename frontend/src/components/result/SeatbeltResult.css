@@ -1,0 +1,77 @@
+.seatbelt-result {
+  margin: 0;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.seatbelt-result > p { margin: 0 0 10px; }
+
+.seatbelt-result__people {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.seatbelt-person {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: #fafbfc;
+  box-sizing: border-box;
+}
+
+.seatbelt-person__image, .seatbelt-person__missing {
+  width: 80px;
+  height: 104px;
+  flex: 0 0 80px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #e9edf2;
+  overflow: hidden;
+}
+
+.seatbelt-person__image { padding: 0; cursor: zoom-in; }
+.seatbelt-person__image img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.seatbelt-person__missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.seatbelt-person__details { min-width: 0; flex: 1; font-size: 12px; }
+.seatbelt-person__details dl { display: grid; gap: 7px; margin: 8px 0 0; }
+.seatbelt-person__details dt { color: var(--color-muted); font-size: 11px; }
+.seatbelt-person__details dd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 8px;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.seatbelt-person__details dl > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.seatbelt-person__details dd {
+  margin: 0;
+  flex: 1;
+}
+.seatbelt-person__confidence { color: var(--color-primary); white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .seatbelt-person { gap: 6px; padding: 7px; }
+  .seatbelt-person__image, .seatbelt-person__missing { width: 48px; flex-basis: 48px; height: 64px; }
+}

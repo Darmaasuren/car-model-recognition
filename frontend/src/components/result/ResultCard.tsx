@@ -1,10 +1,12 @@
+import { SeatbeltResult } from "./SeatbeltResult";
 import { resolveMediaUrl } from "../../api/client";
 import type {
   LiveRecognitionResult,
   Prediction,
 } from "../../models/live";
 import "./ResultCard.css";
-import { SeatbeltDetails } from "./SeatbeltDetails";
+import { useState } from "react";
+import { ImageViewer } from "../mediaPreview/ImageViewer";
 
 interface ResultCardProps {
   result: LiveRecognitionResult;
@@ -60,13 +62,23 @@ function PredictionItem({
 }
 
 export function ResultCard({ result }: ResultCardProps) {
+  const [preview, setPreview] = useState(false);
+  const imageSrc = resolveMediaUrl(result.cropUrl);
+  const imageAlt = result.model?.label ?? "Танигдсан машин";
   return (
     <article className="result-card">
-      <img
-        className="result-card__image"
-        src={resolveMediaUrl(result.cropUrl)}
-        alt={result.model?.label ?? "Танигдсан машин"}
-      />
+      <button
+        type="button"
+        className="result-card__image-button"
+        onClick={() => setPreview(true)}
+        aria-label={`${imageAlt} — зураг томруулах`}
+      >
+        <img
+          className="result-card__image"
+          src={imageSrc}
+          alt={imageAlt}
+        />
+      </button>
 
       <div className="result-card__body">
         <time
@@ -97,8 +109,17 @@ export function ResultCard({ result }: ResultCardProps) {
             prediction={result.view}
           />
         </div>
-        <SeatbeltDetails result={result.seatbelt} />
       </div>
+      <div className="result-card__occupants">
+        <SeatbeltResult result={result.seatbelt} />
+      </div>
+      {preview && (
+      <ImageViewer
+        src={imageSrc}
+        alt={imageAlt}
+        onClose={() => setPreview(false)}
+      />
+    )}
     </article>
   );
 }
